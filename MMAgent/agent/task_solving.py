@@ -126,14 +126,14 @@ class TaskSolver(BaseAgent):
             max_retry += 1
             try:
                 completion = self.llm.generate(prompt)
-                new_content = completion.split("```python")[1].split("```")[0].strip()
+                new_content = completion.split("```python")[1].split("```")[0].strip() # 根据任务描述和建模公式生成代码，得到new_content
                 break  
             except Exception as e:
                 # Format control.
                 print(f"Retry! The code does not start with ```python")
                 continue
 
-        with open(os.path.join(work_dir, script_name), "w") as f:
+        with open(os.path.join(work_dir, script_name), "w") as f: # 将new_content写入到'/home/hyn/LLM-MM-Agent/MMAgent/output/MM-Agent/2024_C_20251016-095808/code/main1.py'中
             f.write(new_content)
         
         # Execute the script.
@@ -193,12 +193,12 @@ class TaskSolver(BaseAgent):
             while iteration < max_iteration:
                 print("="*10 + f" Iteration: {iteration + 1} " + "="*10)
                 if iteration == 0:
-                    code, observation = self.coding_actor(data_file, data_summary, variable_description, task_description, task_analysis, formulas, modeling, dependent_file_prompt, code_template, script_name, work_dir, user_prompt)
+                    code, observation = self.coding_actor(data_file, data_summary, variable_description, task_description, task_analysis, formulas, modeling, dependent_file_prompt, code_template, script_name, work_dir, user_prompt) # 第一次生成代码
                     # If the script has been successfully executed: Exit.
                     if "Traceback (most recent call last):" not in observation and "SyntaxError: invalid syntax" not in observation and "IndentationError" not in observation:
                         return code, True, observation.split("The script has been executed. Here is the output:\n")[1]
                 else:
-                    code, observation = self.coding_debugger(code_template, modeling, code, observation, script_name, work_dir, user_prompt)
+                    code, observation = self.coding_debugger(code_template, modeling, code, observation, script_name, work_dir, user_prompt) #第一次生成代码不成功进行debug
                     # If the script has been successfully executed: Exit.
                     if "Traceback (most recent call last):" not in observation and "SyntaxError: invalid syntax" not in observation and "IndentationError" not in observation:
                         return code, True, observation.split("The script has been executed. Here is the output:\n")[1]

@@ -19,9 +19,9 @@ class ProblemUnderstanding(BaseAgent):
         return self.llm.generate(prompt)
 
     def analysis(self, modeling_problem: str, round: int = 3, user_prompt: str = ''):
-        problem_analysis = self.analysis_actor(modeling_problem, user_prompt)
+        problem_analysis = self.analysis_actor(modeling_problem, user_prompt) # 生成问题分析
         for i in range(round):
-            problem_analysis_critique = self.analysis_critic(modeling_problem, problem_analysis)
+            problem_analysis_critique = self.analysis_critic(modeling_problem, problem_analysis) # 生成问题分析的批评
             problem_analysis_improvement = self.analysis_improvement(modeling_problem, problem_analysis, problem_analysis_critique, user_prompt)
             problem_analysis = problem_analysis_improvement
         return problem_analysis

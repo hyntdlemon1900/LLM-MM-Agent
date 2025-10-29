@@ -8,9 +8,10 @@ def computational_solving(llm, coordinator, with_code, problem, task_id, task_de
     ts = TaskSolver(llm)
     cc = ChartCreator(llm)
     code_template = open(os.path.join('MMAgent/code_template','main{}.py'.format(task_id))).read()
-    save_path = os.path.join(output_dir,'code/main{}.py'.format(task_id))
-    work_dir = os.path.join(output_dir,'code')
-    script_name = 'main{}.py'.format(task_id)
+    save_path = os.path.join(output_dir,'code/main{}.py'.format(task_id)) # '/home/hyn/LLM-MM-Agent/MMAgent/output/MM-Agent/2024_C_20251015-214057/code/main1.py'
+    work_dir = os.path.join(output_dir,'code') # '/home/hyn/LLM-MM-Agent/MMAgent/output/MM-Agent/2024_C_20251015-214057/code'
+    script_name = 'main{}.py'.format(task_id) #'main1.py'
+
 
     if with_code:
         task_code, is_pass, execution_result = ts.coding(problem['dataset_path'], problem['data_description'], problem['variable_description'], task_description, task_analysis, task_modeling_formulas, task_modeling_method, dependent_file_prompt, code_template, script_name, work_dir)

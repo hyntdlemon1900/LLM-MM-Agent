@@ -4,3 +4,10 @@ problem_modeling_round: 1
 task_formulas_round: 1
 tasknum: 4
 chart_num: 3
+
+# LLMINA专用配置
+llmina:
+  problem_analysis_round: 1
+  algorithm_design_round: 1
+  code_generation_round: 1
+  task_formulas_round: 1

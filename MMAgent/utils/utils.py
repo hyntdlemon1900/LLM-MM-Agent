@@ -165,21 +165,28 @@ def save_solution(solution, name, path):
 
 
 def mkdir(path):
-    if not os.path.dirname(os.path.dirname(path)):
-        os.mkdir(os.path.dirname(os.path.dirname(path)))
-    if not os.path.dirname(path):
-        os.mkdir(os.path.dirname(path))
-    os.mkdir(path)
-    os.mkdir(path + '/json')
-    os.mkdir(path + '/markdown')
-    os.mkdir(path + '/latex')
-    os.mkdir(path + '/code')
-    os.mkdir(path + '/usage')
+    # Create base path and all subdirectories if they do not exist
+    os.makedirs(path, exist_ok=True)
+    os.makedirs(os.path.join(path, 'json'), exist_ok=True)
+    os.makedirs(os.path.join(path, 'markdown'), exist_ok=True)
+    os.makedirs(os.path.join(path, 'latex'), exist_ok=True)
+    os.makedirs(os.path.join(path, 'code'), exist_ok=True)
+    os.makedirs(os.path.join(path, 'usage'), exist_ok=True)
 
 
 
 def load_config(args, config_path='config.yaml'):
-    with open(config_path, 'r') as f:
+    # Resolve project root (two levels up from this utils file)
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+
+    # Determine config path priority: CLI arg > default at project root
+    if getattr(args, 'config', None):
+        user_provided = args.config
+        config_abs_path = user_provided if os.path.isabs(user_provided) else os.path.abspath(os.path.join(project_root, user_provided))
+    else:
+        config_abs_path = os.path.join(project_root, 'config.yaml')
+
+    with open(config_abs_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
     config['model_name'] = args.model_name
     config['method_name'] = args.method_name
@@ -187,11 +194,18 @@ def load_config(args, config_path='config.yaml'):
 
 
 def get_info(args):
-    problem_path = 'MMBench/problem/{}.json'.format(args.task)
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+
+    problem_path = os.path.join(project_root, 'MMBench', 'problem', f'{args.task}.json')
     config = load_config(args)
-    dataset_dir = os.path.join('MMBench/dataset/', args.task)
-    output_dir = os.path.join('MMAgent/output/{}'.format(config["method_name"]), args.task + '_{}'.format(datetime.now().strftime('%Y%m%d-%H%M%S')))
-    if not os.path.exists(output_dir):
-        mkdir(output_dir)
+    
+    # 如果是LLMINA任务，使用LLMINA专用配置
+    if args.task == 'LLMINA' and 'llmina' in config:
+        config.update(config['llmina'])
+    
+    dataset_dir = os.path.join(project_root, 'MMBench', 'dataset', args.task)
+    output_dir = os.path.join(project_root, 'MMAgent', 'output', f"{config['method_name']}", f"{args.task}_{datetime.now().strftime('%Y%m%d-%H%M%S')}")
+
+    mkdir(output_dir)
     print(f'Processing {problem_path}..., config: {config}')
     return problem_path, config, dataset_dir, output_dir

@@ -1,0 +1,94 @@
+{
+    "background": "Modern distributed machine-learning clusters run many training jobs at once. In each iteration, every worker must send a large gradient tensor toward its job’s parameter server (PS). Programmable switches can be enabled with in-network aggregation (INA) so that partial sums are computed inside the network before traffic reaches the PS, reducing total bytes carried. However, INA can be installed on only a limited number of switches and each such switch has a finite processing throughput; network links also have fixed bandwidth capacities. The resulting decision is joint: (1) which switches should host INA (a placement problem under a budget), and (2) for each worker, which single aggregation point it should use (an assignment/routing problem). These choices interact: poor placement can create hot spots; poor assignments can underutilize the placed INA. The MILP models this coupling explicitly, together with practical rules such as “one chosen aggregation point per worker” and “at most one INA hop before the PS,” while enforcing all switch-processing and link-bandwidth limits. The performance metric is the makespan—the time by which all jobs have finished their gradient aggregation in an iteration. Minimizing this makespan requires coordinating placement and routing across all jobs concurrently.",
+    "problem_requirement": "Design and implement a scalable algorithm within the provided code template that jointly decides where to deploy in-network aggregation under a strict switch budget $K$ and how to assign each worker’s gradient traffic to an aggregation point, thereby Minimizing the overall iteration makespan across concurrently running training jobs. The final code must select a feasible set of INA switches and produce assignments that satisfy all capacity and flow constraints from the underlying optimization model, including switch processing limits and network link bandwidths, ensuring feasibility and delivering near-optimal performance for large networks by avoiding a full-scale MILP solution.",
+
+
+    "problem_formulation": {
+      "model_type": "Mixed-Integer Linear Program (MILP)",
+      "objective": {
+        "expression": "Maximize $\\alpha$",
+        "meaning": "Minimize the iteration makespan t, with $\\alpha = 1/t$, thereby maximizing the overall end-to-end aggregation speed across all concurrent jobs."
+      },
+      "key_constraints": [
+        {
+          "name": "Makespan Constraint",
+          "expression": "$\\frac{\\gamma_j}{m_j} \\ge \\alpha, \\forall j \\in J$",
+          "meaning": "Each job’s completion time $(m_j / \\gamma_j)$ is no greater than the makespan $t = 1/\\alpha$; the slowest job determines $\\alpha$."
+        },
+        {
+          "name": "INA Placement Budget",
+          "expression": "$\\sum_{s \\in S} x_s \\le K$",
+          "meaning": "At most $K$ switches are enabled with in-network aggregation (INA)."
+        },
+        {
+          "name": "Worker Aggregation Choice (Exclusivity)",
+          "expression": "$\\sum_{v \\in S \\cup \\{d_j\\}} y_{jwv} = 1,\\; y_{jws} \\le x_s,\\; \\forall w \\in W_j,\\; j \\in J,\\; s \\in S$",
+          "meaning": "Every worker selects exactly one aggregation node $v$ (an INA switch $s$ or the job’s parameter server $d_j$). A worker can use switch $s$ only if INA is deployed there."
+        },
+        {
+          "name": "INA Switch Processing Capacity",
+          "expression": "$\\sum_{j \\in J} \\sum_{w \\in W_j} \\gamma_{jws} \\le C_s \\cdot x_s,\\; \\forall s \\in S$",
+          "meaning": "The total incoming gradient rate arriving at an INA-enabled switch cannot exceed that switch’s processing capacity."
+        },
+        {
+          "name": "Variable Domains",
+          "expression": "$x_s \\in \\{0,1\\},\\; y_{jwv} \\in \\{0,1\\},\\; \\gamma_{\\cdot} \\ge 0,\\; \\alpha \\ge 0$",
+          "meaning": "Placement and assignment variables are binary; all rate variables and $\\alpha$ are nonnegative."
+        },
+        {
+          "name": "Selection–Rate Coupling and Per-Worker/Job Rate Consistency",
+          "expression": "$\\gamma_{jw} = \\sum_{s \\in S} \\gamma_{jws} + \\gamma_{jw d_j},\\; \\gamma_j \\le \\gamma_{jw}\\; (\\forall w \\in W_j),\\; \\gamma_{jws} \\le M\\,y_{jws},\\; \\gamma_{jw d_j} \\le M\\,y_{jw d_j}$",
+          "meaning": "A worker’s total sending rate equals the sum of its rates to INA switches and to the PS; a job’s effective rate is bounded by every worker’s rate (the slowest worker bottlenecks the job). Big-M constraints ensure rates are positive only if the corresponding binary selection allows the connection."
+        },
+        {
+          "name": "Aggregation Egress Consistency (INA Output Covers Assigned Inputs)",
+          "expression": "$\\gamma_{js} \\ge \\gamma_{jws},\\; \\forall j \\in J,\\; s \\in S,\\; w \\in W_j$",
+          "meaning": "For any job–switch pair, the INA egress rate must not be smaller than any assigned worker’s ingress rate, preventing unrealistically low egress after aggregating multiple inputs."
+        },
+        {
+          "name": "PS Inflow Sufficiency",
+          "expression": "$\\gamma_j \\le \\sum_{s \\in S} \\gamma_{js} + \\sum_{w \\in W_j} \\gamma_{jw d_j},\\; \\forall j \\in J$",
+          "meaning": "A job’s effective rate cannot exceed the total rate that actually reaches its PS via INA egress plus direct worker-to-PS traffic."
+        },
+        {
+          "name": "Single INA Hop",
+          "expression": "Disallow switch-to-switch aggregation (no $s\\to s'$); only allow $w\\to s$, $w\\to d_j$, and $s\\to d_j$ flows.",
+          "meaning": "Each gradient is aggregated at most once in-network before reaching the PS, ruling out multi-hop in-network aggregation chains."
+        },
+        {
+          "name": "Link-Load Definitions (Path-Based Coupling)",
+          "expression": "$l_e^{\\text{w\\to s}} = \\sum_{j} \\sum_{w \\in W_j} \\sum_{s \\in S} I_{w\\to s}(e)\\,\\gamma_{jws};\\; l_e^{\\text{w\\to PS}} = \\sum_{j} \\sum_{w \\in W_j} I_{w\\to d_j}(e)\\,\\gamma_{jw d_j};\\; l_e^{\\text{s\\to PS}} = \\sum_{j} \\sum_{s \\in S} I_{s\\to d_j}(e)\\,\\gamma_{js}$",
+          "meaning": "Per-link loads are defined by convolving path-incidence indicators $I_{u\\to v}(e)$ with the corresponding rates, coupling link utilization to routing decisions."
+        },
+        {
+          "name": "Network Link Capacity",
+          "expression": "$l_e^{\\text{w\\to s}} + l_e^{\\text{w\\to PS}} + l_e^{\\text{s\\to PS}} \\le C_e^{\\text{bw}},\\; \\forall e$",
+          "meaning": "On every link, the sum of worker-to-switch, worker-to-PS, and switch-to-PS traffic cannot exceed the link’s bandwidth capacity."
+        }
+      ]
+    },
+    "variable_description": {
+      "J": "Set of all concurrent distributed machine learning (DML) jobs.",
+      "W_j": "Set of workers belonging to job j.",
+      "S": "Set of network switches in the cluster.",
+      "C_e^bw": "Bandwidth capacity of link e (e.g., 400 Gbps).",
+      "C_s": "Maximum INA processing capacity (throughput limit) of switch s.",
+      "K": "INA budget: maximum number of switches that may be enabled with INA.",
+      "x_s": "Binary variable indicating whether INA is deployed on switch s.",
+      "y_jwv": "Binary variable indicating whether worker w of job j routes its gradient to aggregation node v (an INA switch s or the PS d_j).",
+      "t": "Makespan: total time until all jobs finish gradient aggregation in an iteration; minimized implicitly via maximizing $\\alpha$.",
+      "alpha": "Auxiliary variable defined as $\\alpha = 1/t$; maximizing $\\alpha$ minimizes the makespan.",
+      "gamma_j": "Effective end-to-end aggregation/sending rate achieved by job j (bounded by every worker’s rate and PS inflow).",
+      "d_j": "Parameter server (PS) node for job j.",
+      "m_j": "Total gradient data volume per iteration for job j.",
+      "gamma_jw": "Gradient sending rate for worker w in job j.",
+      "gamma_jws": "Rate at which worker w sends gradient to INA switch s for in-network aggregation.",
+      "gamma_jwd_j": "Rate at which worker w sends gradient directly to PS d_j (without INA).",
+      "gamma_js": "Rate at which INA switch s sends aggregated gradient for job j to PS d_j.",
+      "I_{u->v}(e)": "Path-incidence indicator: equals 1 if link e lies on the chosen path from node u to node v, and 0 otherwise (used when paths are preselected).",
+      "l_e^{w->s}": "Aggregate load on link e due to worker-to-switch traffic, defined from path-incidence and corresponding rates.",
+      "l_e^{w->PS}": "Aggregate load on link e due to worker-to-PS traffic, defined from path-incidence and corresponding rates.",
+      "l_e^{s->PS}": "Aggregate load on link e due to switch-to-PS traffic, defined from path-incidence and corresponding rates.",
+      "M": "A sufficiently large constant used in big-M constraints to couple binary selections with continuous rates."
+    }
+}

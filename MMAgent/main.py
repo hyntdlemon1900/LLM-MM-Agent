@@ -37,10 +37,16 @@ def run(key, problem_path, config, name, dataset_path, output_dir):
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name', type=str, default='gpt-4o')
+    # parser.add_argument('--model_name', type=str, default='gpt-4o-mini')
+    # parser.add_argument('--method_name', type=str, default='MM-Agent')
+    # parser.add_argument('--task', type=str, default='2024_C')
+    # parser.add_argument('--key', type=str, default='sk-t4k67nGFqNCFcGxkkLcxHBGdF3bxuHW3A9rADlxHNyWuQ6gN')
+    # parser.add_argument('--config', type=str, default=None)
+    parser.add_argument('--model_name', type=str, default='qwen3-30b-a3b')
     parser.add_argument('--method_name', type=str, default='MM-Agent')
-    parser.add_argument('--task', type=str, default='2024_C')
-    parser.add_argument('--key', type=str, default='')
+    parser.add_argument('--task', type=str, default='LLMINA')
+    parser.add_argument('--key', type=str, default='any')
+    parser.add_argument('--config', type=str, default=None)
 
     return parser.parse_args()
 

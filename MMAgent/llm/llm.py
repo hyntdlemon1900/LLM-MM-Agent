@@ -20,7 +20,9 @@ class LLM:
             self.api_base = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         elif self.model_name in ['gpt-4o', 'gpt-4']:
             self.api_base = os.getenv('OPENAI_API_BASE')
-        
+        else:
+            # self.api_base = "https://api.chatanywhere.tech/v1"
+            self.api_base = "http://192.168.1.44:8021/v1"
         if not self.api_key:
             raise ValueError('API key not found in environment variables')
 
@@ -55,7 +57,7 @@ class LLM:
                     'prompt_tokens': response.usage.prompt_tokens,
                     'total_tokens': response.usage.total_tokens
                 }
-            elif self.model_name in ['gpt-4o', 'gpt-4']:
+            elif self.model_name in ['gpt-4o', 'gpt-4', 'gpt-4o-mini']:
                 response = self.client.chat.completions.create(
                     model=self.model_name,
                     messages=[
@@ -73,7 +75,7 @@ class LLM:
                     'prompt_tokens': response.usage.prompt_tokens,
                     'total_tokens': response.usage.total_tokens
                 }
-            elif self.model_name in ['qwen2.5-72b-instruct']:
+            elif self.model_name in ['qwen2.5-72b-instruct', 'qwen3-30b-a3b']:
                 response = self.client.chat.completions.create(
                     model=self.model_name,
                     messages=[
