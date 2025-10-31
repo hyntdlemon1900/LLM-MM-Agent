@@ -4,14 +4,13 @@
 """
 import os
 from utils.utils import save_solution
-from agent.llmina_task_solver_clean import ProgressiveTaskSolver  # 使用通用的渐进式求解器
+from agent.llmina_task_solver_clean import solve_task  # 使用通用的渐进式求解器
 import json
 
 
 def computational_solving_enhanced(
     llm, coordinator, problem, task_id, task_descriptions,
-    modeling_solution, config, output_dir, task_classification=None, task_strategy=None,
-    task_solver=None
+    modeling_solution, config, output_dir, task_classification=None, task_strategy=None
 ):
     """
     增强的计算求解流程（针对分解后的子任务）
@@ -32,7 +31,6 @@ def computational_solving_enhanced(
         output_dir: 输出目录
         task_classification: 预分类结果（任务类型和复杂度）
         task_strategy: 预计算策略（求解参数配置）
-        task_solver: 渐进式任务求解器实例（跨任务共享，保持task_history状态）
         
     Returns:
         任务求解结果字典
@@ -40,14 +38,7 @@ def computational_solving_enhanced(
     print(f"\n{'='*80}")
     print(f"Enhanced Computational Solving: Task {task_id}")
     print(f"{'='*80}")
-    
-    # # 如果没有传入task_solver，创建新实例（兼容旧代码）
-    # if task_solver is None:
-    #     print("  [Warning] task_solver not provided, creating new instance (task_history will not persist)")
-    #     task_solver = ProgressiveTaskSolver(llm)
-    # else:
-    # print(f"  Using shared task_solver (task_history has {len(task_solver.task_history)} previous tasks)")
-    
+
     # 获取任务上下文
     task_description = task_descriptions[task_id - 1]
     classification = task_classification
@@ -56,19 +47,6 @@ def computational_solving_enhanced(
     print(f"  Task Type: {classification['category']}")
     print(f"  Complexity: {classification['complexity']}")
     print(f"  Strategy: {strategy['code_generation_strategy']}")
-    
-    # # ============================================================================
-    # # Stage 1: 渐进式任务求解（生成完整solver）
-    # # ============================================================================
-    # # 注意：依赖信息和代码模板的获取已经整合到 ProgressiveTaskSolver._build_progressive_prompt 中
-    # print("\n[Stage 1] Progressive Task Solving (Complete Solver)")
-    
-    # # 显示依赖信息（用于日志）
-    # task_dependency = coordinator.DAG.get(str(task_id), [])
-    # if task_dependency:
-    #     print(f"  Dependencies: {task_dependency}")
-    # else:
-    #     print(f"  Dependencies: None (independent task)")
     
     # 准备求解配置
     solving_config = {
@@ -79,12 +57,20 @@ def computational_solving_enhanced(
     
     # 执行求解 - 调用新的solve_task方法
     try:
-        result = task_solver.solve_task(
+        # 兼容无 Coordinator 的执行：从 coordinator 提取依赖信息，若无则使用顺序执行默认值
+        dependency_dag = getattr(coordinator, 'DAG', {}) if coordinator is not None else {}
+        dependency_analysis = getattr(coordinator, 'task_dependency_analysis', []) if coordinator is not None else []
+        past_results = getattr(coordinator, 'memory', {}) if coordinator is not None else {}
+
+        result = solve_task(
+            llm=llm,
             task_id=task_id,
             total_tasks=len(task_descriptions),
             task_description=task_description,
             modeling_solution=modeling_solution,
-            coordinator=coordinator,
+            dependency_dag=dependency_dag,
+            dependency_analysis=dependency_analysis,
+            past_results=past_results,
             config=solving_config
         )
                         

@@ -1,0 +1,29 @@
+# LangGraph Multi-Agent System Requirements
+
+# Core LangGraph dependencies
+langgraph>=0.2.0
+langchain-core>=0.3.0
+typing-extensions>=4.5.0
+
+# LLM and API
+openai>=1.0.0
+python-dotenv>=1.0.0
+
+# Data processing
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Optimization (for LLMINA)
+gurobipy>=10.0.0
+
+# Visualization (optional)
+graphviz>=0.20.0
+# pygraphviz>=1.11  # Uncomment if you want advanced graph visualization
+
+# Database for checkpoints
+# SQLite is built-in with Python, no need to install
+
+# Development dependencies (optional)
+pytest>=7.0.0  # For testing
+black>=23.0.0  # For code formatting
+mypy>=1.0.0    # For type checking

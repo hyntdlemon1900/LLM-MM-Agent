@@ -38,7 +38,7 @@ This type of problem differs fundamentally from open-ended mathematical modeling
 You are NOT required to follow any fixed number of subtasks or predefined stages. Analyze the specific problem and solution approach, then decompose it in whatever way makes the most logical and practical sense. Some solutions may naturally divide into 2-3 major phases, others into 5-6 distinct components. Let the problem structure guide your decomposition.
 """
 
-    def decompose(self, modeling_problem: str, modeling_solution: str, problem_type: str):
+    def decompose(self, modeling_problem: str, modeling_solution: str):
         # 对于LLMINA问题，使用专用的分解原则
         decomposed_principle = self.llmina_decompose_principle
         prompt = TASK_DECOMPOSE_PROMPT.format(
@@ -62,9 +62,9 @@ You are NOT required to follow any fixed number of subtasks or predefined stages
         answer = self.llm.generate(prompt)
         return answer
 
-    def decompose_and_refine(self, modeling_problem: str, modeling_solution: str, problem_type: str):
+    def decompose_and_refine(self, modeling_problem: str, modeling_solution: str):
         decomposed_subtasks = self.decompose(
-            modeling_problem, modeling_solution, problem_type
+            modeling_problem, modeling_solution
         )
         decomposed_subtasks = [t for t in decomposed_subtasks if t.strip()]
         for task_i in range(len(decomposed_subtasks)):

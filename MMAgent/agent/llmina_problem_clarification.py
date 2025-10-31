@@ -18,47 +18,45 @@ class ProblemClarification(BaseAgent):
         current_problem = problem_str  # 保存未装饰的原始问题+用户补充
         history = []
         final_summary = ''
-
-        def _summarize_round(problem_desc: str, agent_fb: str, user_rep: str) -> str:
-            """对本轮新增的用户补充进行提炼，返回可直接附加的问题补充文本。"""
-            return (llm_summary.summary_actor({
-                'problem': problem_desc,
-                'agent_feedback': agent_fb,
-                'user_reply': user_rep
-            }) or '').strip()
-                    
+    
         round_idx = 1
         while round_idx <= max_rounds:
             # 1) 用PROBLEM_CLARIFACATION_PROMPT装饰当前问题，向LLM询问
             decorated_problem = PROBLEM_CLARIFACATION_PROMPT.format(problem_str=current_problem).strip()
             agent_feedback = self.llm.generate(decorated_problem)
 
-            # 2) 记录历史
+            # 2) 先判断是否需要澄清（在获取用户输入之前）
+            judge_result = llm_judge.judge_actor(agent_feedback)
+            
+            # 3) 记录历史
             record = {
                 'round': round_idx,
                 'problem': current_problem,
                 'agent_feedback': agent_feedback
             }
 
-            # 3) 获取用户回复
+            # 4) 如果已经清晰，不需要澄清，直接退出
+            if not judge_result:
+                history.append(record)
+                break
+
+            # 5) 需要澄清，获取用户回复
             user_reply = user_input_func(agent_feedback)
             record['user_reply'] = user_reply
 
-            # 4) 本轮摘要提炼，仅提取用户新增有效信息
-            round_summary = _summarize_round(current_problem, agent_feedback, user_reply)
+            # 6) 本轮摘要提炼，仅提取用户新增有效信息
+            round_summary = (llm_summary.summary_actor({
+                'problem': current_problem,
+                'agent_feedback': agent_feedback,
+                'user_reply': user_reply
+            }) or '').strip()
+
             record['round_summary'] = round_summary
             history.append(record)
 
-            # 5) 将新增有效信息附加到问题描述末尾，形成新的问题描述
+            # 7) 将新增有效信息附加到问题描述末尾，形成新的问题描述
             if round_summary:
                 current_problem = (current_problem + "\n" + round_summary).strip()
-
-            # 6) 由判别智能体判断是否已清晰
-            judge_result = llm_judge.judge_actor(agent_feedback)
-            if isinstance(judge_result, str):
-                judge_result = judge_result.strip().lower() in ['True', 'yes', '1']
-            if judge_result:
-                break
 
             # 若用户未提供任何信息，且仍未通过判别，则提前结束避免空转
             if not (user_reply and user_reply.strip()):

@@ -1,5 +1,5 @@
 """
-渐进式任务求解智能体 - 通用版本
+渐进式任务求解模块 - 通用版本
 
 核心工作流（适用于任何可分解的优化问题）：
 1. 任务拆解：将复杂问题分解为多个子任务
@@ -21,12 +21,11 @@
 - 机器学习流程（数据处理→特征工程→模型训练→优化）
 - 系统设计（架构→模块→集成→优化）
 """
-from .base_agent import BaseAgent
 from .llmina_code_validator import CodeValidator
 import os
 import subprocess
 import selectors
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Any
 
 
 class EnvException(Exception):
@@ -87,35 +86,15 @@ def execute_script(script_path, work_dir):
         raise EnvException(f"Something went wrong in executing {script_path}: {e}")
 
 
-class ProgressiveTaskSolver(BaseAgent):
-    """
-    渐进式任务求解智能体 - 通用版本
-    
-    适用于任何可分解的优化/求解问题。
-    每个任务都生成完整的solver函数，但有明确的focus：
-    - Task 1: 精确实现第一部分算法，其余用默认
-    - Task 2: 复制Task 1 + 精确实现第二部分算法，其余用默认
-    - Task 3: 复制Task 1-2 + 精确实现第三部分算法，其余用默认
-    - Task N: 复制Task 1-(N-1) + 精确实现最终优化算法
-    
-    示例应用：
-    - 优化问题：候选生成→初始解→局部优化→全局优化
-    - ML流程：数据处理→特征工程→模型训练→超参优化
-    - 系统设计：架构设计→核心模块→辅助功能→性能优化
-    """
-    
-    def __init__(self, llm):
-        super().__init__(llm)
-        self.code_validator = CodeValidator(llm)
-        self.task_history = {}  # 存储每个任务的实现，供后续任务继承
-    
-    def solve_task(
-        self,
+def solve_task(
+        llm,
         task_id: int,
         total_tasks: int,
         task_description: str,
         modeling_solution: str,
-        coordinator,
+        dependency_dag: Dict,
+        dependency_analysis: list,
+        past_results: Dict[int, Dict],
         config: Dict
     ) -> Dict:
         """
@@ -135,7 +114,9 @@ class ProgressiveTaskSolver(BaseAgent):
             total_tasks: 总任务数
             task_description: 任务描述（经过refine的详细描述）
             modeling_solution: 用户建模方案（整体算法设计）
-            coordinator: 协调器（管理任务依赖和结果）
+            dependency_dag: 依赖DAG（键为任务ID字符串，值为依赖任务ID列表）
+            dependency_analysis: 每个任务的依赖分析文本列表
+            past_results: 历史任务结果，键为task_id，值为结果字典
             config: 配置（包含work_dir, template_dir等）
             
         Returns:
@@ -155,16 +136,11 @@ class ProgressiveTaskSolver(BaseAgent):
         
         # 一步完成：分析、设计、生成（避免幻觉）
         print(f"\n[Generating Complete Solver] Task {task_id}/{total_tasks}")
-        code, is_pass, execution_result, validation_result = self._generate_complete_solver(
-            task_id, total_tasks, is_final,
-            task_description, modeling_solution, coordinator, config
+        code, is_pass, execution_result, validation_result = _generate_complete_solver(
+            llm, task_id, total_tasks, is_final,
+            task_description, modeling_solution, dependency_dag, dependency_analysis, past_results, config
         )
         
-        # 保存本任务实现，供后续任务继承
-        self.task_history[task_id] = {
-            'description': task_description,
-            'code': code
-        }
         
         return {
             'task_code': code,
@@ -172,19 +148,22 @@ class ProgressiveTaskSolver(BaseAgent):
             'execution_result': execution_result,
             'validation_result': validation_result
         }
-    
-    # ============================================================================
-    # 核心方法：一步生成（避免幻觉）
-    # ============================================================================
-    
-    def _generate_complete_solver(
-        self,
+
+
+# ============================================================================
+# 核心函数：一步生成（避免幻觉）
+# ============================================================================
+
+def _generate_complete_solver(
+        llm,
         task_id: int,
         total_tasks: int,
         is_final: bool,
         task_description: str,
         modeling_solution: str,
-        coordinator,
+        dependency_dag: Dict,
+        dependency_analysis: list,
+        past_results: Dict[int, Dict],
         config: Dict
     ) -> Tuple[str, bool, str, Dict]:
         """
@@ -201,21 +180,22 @@ class ProgressiveTaskSolver(BaseAgent):
         script_name = f'solver_task{task_id}.py'
         
         # 构建一步到位的提示词（包含分析、设计、实现）
-        prompt = self._build_progressive_prompt(
+        prompt = _build_progressive_prompt(
             task_id, total_tasks, is_final,
             task_description, modeling_solution, 
-            coordinator, config
+            dependency_dag, dependency_analysis, past_results, config
         )
         
         # 生成代码
         print(f"  Generating code for Task {task_id}...")
-        code = self._generate_code_from_prompt(prompt)
+        code = _generate_code_from_prompt(llm, prompt)
         
         # 先进行快速语法验证（不调用LLM修复，只检查）
         print(f"  Quick syntax validation...")
         # 获取代码模板用于验证（如果在prompt构建时已经获取，这里可以复用）
-        code_template = self._get_code_template(task_id, config)
-        code, has_syntax_error, syntax_issues = self.code_validator.validate_and_fix(
+        code_template = _get_code_template(task_id, config)
+        code_validator = CodeValidator(llm)
+        code, has_syntax_error, syntax_issues = code_validator.validate_and_fix(
             code, code_template, {}, task_description, max_iterations=0  # 只检查不修复
         )
         
@@ -228,25 +208,25 @@ class ProgressiveTaskSolver(BaseAgent):
         
         # 执行验证（使用test_llm_solver）- 可能会发现运行时错误
         print(f"  Testing solver with test_llm_solver...")
-        code, is_pass, execution_result = self._test_complete_solver(
+        code, is_pass, execution_result = _test_complete_solver(
             code, script_name, work_dir, task_id, total_tasks
         )
         
         # 如果执行失败，用执行错误信息让LLM修复代码
         if not is_pass:
             print(f"  [!] Execution failed, attempting to fix with error feedback...")
-            code, is_pass, execution_result = self._fix_with_execution_feedback(
-                code, task_description, execution_result,
+            code, is_pass, execution_result = _fix_with_execution_feedback(
+                llm, code, task_description, execution_result,
                 script_name, work_dir, task_id, total_tasks,
-                coordinator, config,
+                config, past_results,
                 max_fix_iterations=2
             )
         
         validation_result = {'is_valid': is_pass, 'execution_result': execution_result}
         return code, is_pass, execution_result, validation_result
     
-    def _fix_with_execution_feedback(
-        self,
+def _fix_with_execution_feedback(
+        llm,
         original_code: str,
         task_description: str,
         execution_error: str,
@@ -254,8 +234,8 @@ class ProgressiveTaskSolver(BaseAgent):
         work_dir: str,
         task_id: int,
         total_tasks: int,
-        coordinator,
         config: Dict,
+        past_results: Dict[int, Dict],
         max_fix_iterations: int = 2
     ) -> Tuple[str, bool, str]:
         """使用执行错误反馈让LLM修复代码"""
@@ -266,7 +246,7 @@ class ProgressiveTaskSolver(BaseAgent):
             print(f"    Fix iteration {iteration + 1}/{max_fix_iterations}")
             
             # 获取代码参考（提供helper functions参考）
-            code_reference = self._get_code_reference(task_id, config)
+            code_reference = _get_code_reference(task_id, config, past_results)
             
             # 构建修复提示（叙事风格）
             fix_prompt = f"""The code you generated encountered an error during execution. Let's fix it together.
@@ -335,10 +315,10 @@ Now, generate the corrected `llm_solver` function:"""
             
             # 让LLM修复代码
             try:
-                fixed_code = self._generate_code_from_prompt(fix_prompt)
+                fixed_code = _generate_code_from_prompt(llm, fix_prompt)
                 
                 # 测试修复后的代码
-                fixed_code, is_pass, execution_result = self._test_complete_solver(
+                fixed_code, is_pass, execution_result = _test_complete_solver(
                     fixed_code, script_name, work_dir, task_id, total_tasks
                 )
                 
@@ -357,14 +337,15 @@ Now, generate the corrected `llm_solver` function:"""
         print(f"    [!] All fix attempts exhausted")
         return current_code, False, execution_error
     
-    def _build_progressive_prompt(
-        self,
+def _build_progressive_prompt(
         task_id: int,
         total_tasks: int,
         is_final: bool,
         task_description: str,
         modeling_solution: str,
-        coordinator,
+        dependency_dag: Dict,
+        dependency_analysis: list,
+        past_results: Dict[int, Dict],
         config: Dict
     ) -> str:
         """
@@ -380,10 +361,10 @@ Now, generate the corrected `llm_solver` function:"""
         """
         
         # 1. 获取依赖信息
-        dependent_info = self._get_dependency_info(coordinator, task_id)
+        dependent_info = _get_dependency_info_from_state(dependency_dag, dependency_analysis, past_results, task_id)
         
         # 2. 获取代码参考（template+tools 或 history+tools）
-        code_reference = self._get_code_reference(task_id, config)
+        code_reference = _get_code_reference(task_id, config, past_results)
         
         # 3. 判断是否为第一个任务
         is_first_task = (task_id == 1)
@@ -526,21 +507,25 @@ Now, generate the `llm_solver` function:"""
 
         return prompt
     
-    def _format_previous_tasks(self) -> str:
+def _format_previous_tasks( past_results: Dict[int, Dict]) -> str:
         """
         格式化前面任务的实现（简洁版）
         
         只返回上一个任务的完整 llm_solver 代码
         """
-        if not self.task_history:
+        if not past_results:
             return "(No previous tasks - starting from template)"
         
         # 只获取最后一个任务（上一个任务）的代码
-        last_task_id = max(self.task_history.keys())
-        task = self.task_history[last_task_id]
+        last_task_id = max(past_results.keys())
+        task = past_results[last_task_id]
         
         # 提取纯 llm_solver 函数（去掉导入语句）
-        code_lines = task['code'].split('\n')
+        task_code = task.get('task_code', '')
+        if not task_code:
+            return "(Previous task code not available)"
+        
+        code_lines = task_code.split('\n')
         
         # 找到 llm_solver 函数的开始
         solver_start = -1
@@ -565,31 +550,37 @@ Now, generate the `llm_solver` function:"""
             return f"""Previous implementation from Task {last_task_id}:
 
 ```python
-{task['code']}
+{task_code}
 ```
 
 **Note:** This code already includes the implementation of tasks 1-{last_task_id}. Build upon it."""
     
-    def _get_copy_hints(self) -> str:
+def _get_copy_hints( past_results: Dict[int, Dict]) -> str:
         """获取复制提示"""
-        if not self.task_history:
+        if not past_results:
             return "# (No previous tasks to copy)"
         
         hints = []
-        for tid in sorted(self.task_history.keys()):
-            task = self.task_history[tid]
-            desc_short = task['description'][:50].replace('\n', ' ')
+        for tid in sorted(past_results.keys()):
+            task = past_results[tid]
+            desc = task.get('task_description', '')
+            desc_short = desc[:50].replace('\n', ' ') if desc else 'N/A'
             hints.append(f"# Task {tid}: {desc_short}... [copy exact implementation]")
         
         return "\n    ".join(hints)
     
-    def _get_dependency_info(self, coordinator, task_id: int) -> str:
+def _get_dependency_info_from_state( dependency_dag: Dict, dependency_analysis: list, past_results: Dict[int, Dict], task_id: int) -> str:
         """
-        获取任务依赖信息（简洁版）
+        获取任务依赖信息（增强版）
         
-        只返回依赖任务的关键信息：描述和状态
+        从 state 中提取依赖任务的完整信息：
+        - 任务描述（完整版）
+        - 任务状态（通过/失败）
+        - 任务代码（用于参考和继承）
+        - 执行结果（用于理解依赖任务的输出）
         """
-        task_dependency = [int(i) for i in coordinator.DAG.get(str(task_id), [])]
+        dag = dependency_dag or {}
+        task_dependency = [int(i) for i in dag.get(str(task_id), [])]
         
         if len(task_dependency) == 0:
             return ""
@@ -598,24 +589,59 @@ Now, generate the `llm_solver` function:"""
         parts.append(f"Task {task_id} depends on: {task_dependency}\n")
         
         # 添加依赖分析（如果存在）
-        if coordinator.task_dependency_analysis and task_id - 1 < len(coordinator.task_dependency_analysis):
+        if dependency_analysis and task_id - 1 < len(dependency_analysis):
             parts.append("**Dependency Analysis:**")
-            parts.append(coordinator.task_dependency_analysis[task_id - 1])
+            parts.append(dependency_analysis[task_id - 1])
             parts.append("")
         
-        # 列出依赖任务的状态
-        parts.append("**Completed Tasks:**")
+        # 列出依赖任务的详细信息
+        parts.append("**Completed Dependency Tasks:**")
+        parts.append("")
+        
         for dep_id in task_dependency:
-            dep_id_str = str(dep_id)
-            if dep_id_str in coordinator.memory:
-                task_info = coordinator.memory[dep_id_str]
-                desc = task_info.get('task_description', 'N/A')[:100]
-                status = '✓' if task_info.get('is_pass', False) else '✗'
-                parts.append(f"- Task {dep_id} [{status}]: {desc}...")
+            if dep_id in past_results:
+                task_info = past_results[dep_id]
+                
+                # 任务基本信息
+                desc = task_info.get('task_description', 'N/A')
+                status = '✓ PASSED' if task_info.get('is_pass', False) else '✗ FAILED'
+                
+                parts.append(f"### Task {dep_id} [{status}]")
+                parts.append("")
+                parts.append(f"**Description:**")
+                parts.append(desc)
+                parts.append("")
+                
+                # 任务代码（如果存在）
+                task_code = task_info.get('task_code')
+                if task_code:
+                    # 只显示函数签名和前几行，避免提示过长
+                    code_lines = task_code.strip().split('\n')
+                    if len(code_lines) > 50:
+                        # 显示前30行 + 省略标记 + 后5行
+                        preview_code = '\n'.join(code_lines[:30]) + '\n    # ... (code continues) ...\n' + '\n'.join(code_lines[-5:])
+                    else:
+                        preview_code = task_code
+                    
+                    parts.append(f"**Implementation Preview:**")
+                    parts.append("```python")
+                    parts.append(preview_code)
+                    parts.append("```")
+                    parts.append("")
+                
+                # 执行结果（如果存在且有用）
+                exec_result = task_info.get('execution_result', '')
+                if exec_result and len(exec_result) < 500:  # 只显示简短的执行结果
+                    parts.append(f"**Execution Result:**")
+                    parts.append(exec_result[:500])
+                    parts.append("")
+                
+                parts.append("---")
+                parts.append("")
         
         return "\n".join(parts)
     
-    def _get_code_reference(self, task_id: int, config: Dict) -> Dict[str, str]:
+def _get_code_reference( task_id: int, config: Dict, past_results: Dict[int, Dict]) -> Dict[str, str]:
         """
         获取代码参考（template或history）和工具函数
         
@@ -672,7 +698,7 @@ The following helper functions are available in the test environment. You can ca
             }
         else:
             # 后续任务：提供上一个任务的代码
-            if not self.task_history:
+            if not past_results:
                 # 异常情况：应该有历史但没有
                 return {
                     'introduction': "# The Code Foundation\n\nNo previous implementation found (this shouldn't happen).",
@@ -680,11 +706,19 @@ The following helper functions are available in the test environment. You can ca
                 }
             
             # 获取上一个任务的代码
-            last_task_id = max(self.task_history.keys())
-            task = self.task_history[last_task_id]
+            last_task_id = max(past_results.keys())
+            task = past_results[last_task_id]
+            task_code = task.get('task_code', '')
+            
+            if not task_code:
+                # 如果没有代码，返回错误信息
+                return {
+                    'introduction': "# The Code Foundation\n\nPrevious task code not available.",
+                    'code': f"```python\n{helper_functions}\n```"
+                }
             
             # 提取 llm_solver 函数
-            code_lines = task['code'].split('\n')
+            code_lines = task_code.split('\n')
             solver_start = -1
             for i, line in enumerate(code_lines):
                 if line.strip().startswith('def llm_solver('):
@@ -694,7 +728,7 @@ The following helper functions are available in the test environment. You can ca
             if solver_start >= 0:
                 previous_solver = '\n'.join(code_lines[solver_start:])
             else:
-                previous_solver = task['code']
+                previous_solver = task_code
             
             print(f"  Using Task {last_task_id}'s implementation + helper functions")
             
@@ -721,12 +755,12 @@ The following helper functions are available in the test environment. You can ca
                 'code': f"```python\n{helper_functions}\n```\n\n**Important**: These helper functions are pre-imported. Do NOT redefine them - just call them (e.g., `candidates = get_ina_candidates(...)`, `makespan = evaluate_completion_time(...)`)."
             }
     
-    def _get_code_template(self, task_id: int, config: Dict) -> str:
+def _get_code_template( task_id: int, config: Dict) -> str:
         """
         获取代码模板
         
         第一个任务：llmina_solver_template.py + llmina_helper_functions.py
-        后续任务：llmina_helper_functions.py（上一个任务的代码在task_history中）
+        后续任务：llmina_helper_functions.py（上一个任务的代码在past_results中）
         """
         template_dir = config.get('template_dir', 'MMAgent/code_template')
         
@@ -760,7 +794,7 @@ The following helper functions are available in the test environment. You can ca
 # Please implement the solution based on task description and dependencies
 """
     
-    def _wrap_solver_with_imports(self, llm_solver_code: str) -> str:
+def _wrap_solver_with_imports( llm_solver_code: str) -> str:
         """将生成的llm_solver函数包装上辅助函数的导入"""
         
         # 导入语句 - 从evaluation模块导入所有辅助函数
@@ -768,7 +802,7 @@ The following helper functions are available in the test environment. You can ca
 import sys
 from pathlib import Path
 import copy
-ss
+
 # Import helper functions from evaluation module
 try:
     from MMAgent.evaluation import (
@@ -796,8 +830,7 @@ except ModuleNotFoundError:
         complete_code = imports + "\n" + llm_solver_code
         return complete_code
     
-    def _test_complete_solver(
-        self, 
+def _test_complete_solver( 
         code: str, 
         script_name: str, 
         work_dir: str,
@@ -809,7 +842,7 @@ except ModuleNotFoundError:
         os.makedirs(work_dir, exist_ok=True)
         
         # 将生成的llm_solver与辅助函数导入组合
-        complete_code = self._wrap_solver_with_imports(code)
+        complete_code = _wrap_solver_with_imports(code)
         
         # 保存完整代码
         solver_path = os.path.join(work_dir, script_name)
@@ -902,12 +935,12 @@ except ModuleNotFoundError:
             print(error_msg)
             return complete_code, False, error_msg
     
-    def _generate_code_from_prompt(self, prompt: str) -> str:
+def _generate_code_from_prompt(llm, prompt: str) -> str:
         """从提示生成代码（只需要llm_solver函数）"""
         max_retry = 5
         for _ in range(max_retry):
             try:
-                completion = self.llm.generate(prompt)
+                completion = llm.generate(prompt)
                 
                 # 尝试提取代码
                 if "```python" in completion:

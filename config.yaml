@@ -1,13 +1,68 @@
-top_method_num: 6
-problem_analysis_round: 1
-problem_modeling_round: 1
-task_formulas_round: 1
-tasknum: 4
-chart_num: 3
+# LLM-MM-Agent Configuration File
 
-# LLMINA专用配置
+# Model configuration
+model_name: "qwen3-30b-a3b"
+method_name: "LLMINA-LangGraph"
+task: "LLMINA"
+api_key: "any"  # 可通过环境变量 LLM_API_KEY 覆盖
+
+# General settings
+temperature: 0.7
+max_tokens: 4096
+timeout: 300
+
+# LLMINA specific configuration
 llmina:
-  problem_analysis_round: 1
-  algorithm_design_round: 1
-  code_generation_round: 1
-  task_formulas_round: 1
+  clarification_rounds: 3
+  modeling_rounds: 2
+  default_task_num: 3
+  enable_checkpoints: false
+  enable_monitoring: false
+  visualize: false
+  viz_output: "workflow.png"
+  clarification_interactive: true
+  
+  # Agent configurations
+  agents:
+    problem_clarification:
+      max_rounds: 3
+      temperature: 0.7
+    
+    problem_modeling:
+      max_rounds: 2
+      temperature: 0.7
+    
+    task_decomposition:
+      default_num: 3
+      temperature: 0.7
+    
+    task_solving:
+      temperature: 0.7
+      max_retries: 2
+
+# Standard modeling configuration (for non-LLMINA tasks)
+standard:
+  max_rounds: 5
+  temperature: 0.7
+
+# Evaluation configuration
+evaluation:
+  enable: false  # 是否运行评估
+  topo_name: "FatTree"
+  ina_num_list: [3, 5, 7]
+  jobs_num_list: [10, 20, 30]
+  instances_num: 10
+
+# Output configuration
+output:
+  save_intermediate: true
+  save_logs: true
+  verbose: true
+
+# Paths (relative to project root)
+paths:
+  dataset: "MMBench/dataset"
+  problem: "MMBench/problem"
+  output: "MMAgent/output"
+  checkpoints: "./checkpoints"
+  logs: "./logs"

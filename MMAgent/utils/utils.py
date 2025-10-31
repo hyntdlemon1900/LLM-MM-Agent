@@ -175,36 +175,17 @@ def mkdir(path):
 
 
 
-def load_config(args, config_path='config.yaml'):
-    # Resolve project root (two levels up from this utils file)
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+def get_info(args):
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')) # '/home/hyn/LLM-MM-Agent-LLMINA-clean'
 
-    # Determine config path priority: CLI arg > default at project root
-    if getattr(args, 'config', None):
-        user_provided = args.config
-        config_abs_path = user_provided if os.path.isabs(user_provided) else os.path.abspath(os.path.join(project_root, user_provided))
-    else:
-        config_abs_path = os.path.join(project_root, 'config.yaml')
-
+    problem_path = os.path.join(project_root, 'MMBench', 'problem', f'{args.task}.json') #'/home/hyn/LLM-MM-Agent-LLMINA-clean/MMBench/problem/LLMINA.json'
+    
+    config_abs_path = os.path.join(project_root, 'config.yaml') # '/home/hyn/LLM-MM-Agent-LLMINA-clean/config.yaml'
     with open(config_abs_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
-    config['model_name'] = args.model_name
-    config['method_name'] = args.method_name
-    return config
 
-
-def get_info(args):
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-
-    problem_path = os.path.join(project_root, 'MMBench', 'problem', f'{args.task}.json')
-    config = load_config(args)
-    
-    # 如果是LLMINA任务，使用LLMINA专用配置
-    if args.task == 'LLMINA' and 'llmina' in config:
-        config.update(config['llmina'])
-    
-    dataset_dir = os.path.join(project_root, 'MMBench', 'dataset', args.task)
-    output_dir = os.path.join(project_root, 'MMAgent', 'output', f"{config['method_name']}", f"{args.task}_{datetime.now().strftime('%Y%m%d-%H%M%S')}")
+    dataset_dir = os.path.join(project_root, 'MMBench', 'dataset', args.task) # '/home/hyn/LLM-MM-Agent-LLMINA-clean/MMBench/dataset/llmina'
+    output_dir = os.path.join(project_root, 'MMAgent', 'output', f"{config['method_name']}", f"{args.task}_{datetime.now().strftime('%Y%m%d-%H%M%S')}") # '/home/hyn/LLM-MM-Agent-LLMINA-clean/MMAgent/output/LLMINA-LangGraph/llmina_20251029-155016'
 
     mkdir(output_dir)
     print(f'Processing {problem_path}..., config: {config}')
