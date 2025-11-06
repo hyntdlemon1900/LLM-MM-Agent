@@ -6,70 +6,15 @@ task: "LLMINA"
 api_key: "any"  # 可通过环境变量 LLM_API_KEY 覆盖
 api_base: "http://192.168.1.44:8021/v1"  # LLM API base URL
 
-# General settings
-temperature: 0.7
-max_tokens: 4096
-timeout: 300
-
-enable_monitoring: false
-
 # LLMINA specific configuration
 llmina:
-  clarification_rounds: 3
-  modeling_rounds: 2
-  default_task_num: 3
   enable_checkpoints: false
-  
   clarification_interactive: true
-  
-  # Agent configurations
-  agents:
-    problem_clarification:
-      max_rounds: 3
-      temperature: 0.7
-    
-    problem_modeling:
-      max_rounds: 2
-      temperature: 0.7
-    
-    task_decomposition:
-      default_num: 3
-      temperature: 0.7
-    
-    task_solving:
-      temperature: 0.7
-      max_retries: 2
 
-# Standard modeling configuration (for non-LLMINA tasks)
-standard:
-  max_rounds: 5
-  temperature: 0.7
-
-# Evaluation configuration
-evaluation:
-  enable: false  # 是否运行评估
-  topo_name: "FatTree"
-  ina_num_list: [3, 5, 7]
-  jobs_num_list: [10, 20, 30]
-  instances_num: 10
-
-# Output configuration
-output:
-  save_intermediate: true
-  save_logs: true
-  verbose: true
+# Task solving configuration
+max_retries: 2  # 任务求解最大重试次数
 
 # Paths (relative to project root)
 paths:
-  dataset: "MMBench/dataset"
   problem: "MMBench/problem"
   output: "./output"
-  checkpoints: "checkpoints"
-  logs: "logs"
-
-# Problem-specific settings
-# Each problem (e.g., LLMINA) should provide its own evaluation module
-# in MMBench/problem/<problem_name>/evaluation.py
-problem_config:
-  # This will be set by the main program based on the task
-  evaluation_module: ""  # Path to user's evaluation.py

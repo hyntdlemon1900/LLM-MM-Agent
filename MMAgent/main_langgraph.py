@@ -61,9 +61,7 @@ def main():
     config['template_dir'] = str(task_dir / 'code_template')
     config['problem_dir'] = str(task_dir)  # 问题目录路径
     
-    # 动态加载用户的评估模块
-    
-    
+    # 动态加载用户的评估模块    
     evaluator = load_evaluator(str(task_dir))
     config['test_solver_func'] = evaluator['test_solver']
     config['helper_functions'] = evaluator['helper_functions']

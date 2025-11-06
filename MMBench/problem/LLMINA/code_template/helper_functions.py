@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import List, Dict
 import copy
 
-
 def get_ina_candidates(network) -> List[int]:
     """
     Get candidate INA switch IDs based on topology type.
@@ -138,7 +137,6 @@ def link_capacity_limitation(job_idx: int, edge: tuple, workers_id: List[List[in
     ina_to_ps = l_i(edge, ina_id, [ps_id[job_idx]], allPathDict)
     
     return workers_to_ina, workers_to_ps, ina_to_ps
-
 
 def evaluate_completion_time(
     instance: dict, 

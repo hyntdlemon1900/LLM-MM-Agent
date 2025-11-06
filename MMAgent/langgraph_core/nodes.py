@@ -34,7 +34,6 @@ from utils.output_manager import (
 
 def load_problem_node(state: AgentState) -> AgentState:    
     problem_path = state['problem_path']
-    config = state['config']
     output_dir = state['output_dir']
     
     # 确保输出目录结构存在
@@ -47,7 +46,7 @@ def load_problem_node(state: AgentState) -> AgentState:
     # 读取代码模板 - 从任务目录获取
     task_dir = state['task_dir']
     template_dir = os.path.join(task_dir, 'code_template')
-    template_path = os.path.join(template_dir, 'llmina_solver_template.py')
+    template_path = os.path.join(template_dir, 'solver_template.py')
     with open(template_path, 'r', encoding='utf-8') as f:
         code_template = f.read()
     

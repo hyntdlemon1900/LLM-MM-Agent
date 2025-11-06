@@ -49,8 +49,6 @@ def ensure_output_dirs(output_dir: str) -> Dict[str, str]:
         'code': str(output_path / 'code'),
         'results': str(output_path / 'results'),
         'logs': str(output_path / 'logs'),
-        'json': str(output_path / 'json'),
-        'markdown': str(output_path / 'markdown'),
     }
     
     for dir_path in dirs.values():

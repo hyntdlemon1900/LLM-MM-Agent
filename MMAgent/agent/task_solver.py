@@ -683,10 +683,10 @@ def _get_code_reference( task_id: int, config: Dict, past_results: Dict[int, Dic
         if task_id == 1:
             # 第一个任务：提供模板
             try:
-                template_file = os.path.join(template_dir, 'llmina_solver_template.py')
+                template_file = os.path.join(template_dir, 'solver_template.py')
                 with open(template_file, 'r', encoding='utf-8') as f:
                     solver_template = f.read()
-                print(f"  Template loaded: llmina_solver_template.py + llmina_helper_functions.py")
+                print(f"  Template loaded: solver_template.py + helper_functions.py")
             except Exception as e:
                 print(f"  [Warning] Failed to load template: {e}")
                 solver_template = "def llm_solver(instance, network, K, jobs_num, Cs, topo_name):\n    pass"
@@ -776,8 +776,8 @@ def _get_code_template( task_id: int, config: Dict) -> str:
         """
         获取代码模板
         
-        第一个任务：llmina_solver_template.py + llmina_helper_functions.py
-        后续任务：llmina_helper_functions.py（上一个任务的代码在past_results中）
+        第一个任务：solver_template.py + helper_functions.py
+        后续任务：helper_functions.py（上一个任务的代码在past_results中）
         """
         # 从配置获取模板目录（由主程序根据task设置）
         template_dir = config.get('template_dir')
@@ -786,25 +786,25 @@ def _get_code_template( task_id: int, config: Dict) -> str:
         
         try:
             # 始终加载辅助函数
-            helper_file = os.path.join(template_dir, 'llmina_helper_functions.py')
+            helper_file = os.path.join(template_dir, 'helper_functions.py')
             with open(helper_file, 'r', encoding='utf-8') as f:
                 helper_functions = f.read()
             
             if task_id == 1:
                 # 第一个任务：使用完整模板
-                template_file = os.path.join(template_dir, 'llmina_solver_template.py')
+                template_file = os.path.join(template_dir, 'solver_template.py')
                 with open(template_file, 'r', encoding='utf-8') as f:
                     solver_template = f.read()
                 
                 # 拼接：工具函数 + 求解器模板
                 template_content = f"{helper_functions}\n\n{solver_template}"
-                print(f"  Template loaded: llmina_solver_template.py + llmina_helper_functions.py")
+                print(f"  Template loaded: solver_template.py + helper_functions.py")
             else:
                 # 后续任务：使用上一个任务的代码 + 辅助函数
                 # 注意：上一个任务的代码会在 _format_previous_tasks() 中提供
                 # 这里只返回辅助函数作为参考
                 template_content = helper_functions
-                print(f"  Template loaded: llmina_helper_functions.py (previous task's llm_solver will be used)")
+                print(f"  Template loaded: helper_functions.py (previous task's llm_solver will be used)")
             
             return template_content
             
