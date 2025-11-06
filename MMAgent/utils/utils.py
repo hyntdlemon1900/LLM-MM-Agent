@@ -16,11 +16,15 @@ def read_json_file(file_path: str) -> Dict:
 
 
 def write_text_file(file_path: str, content: str):
+    # 确保父目录存在
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
     with open(file_path, 'w', encoding='utf-8') as file:
         file.write(content)
 
 
 def write_json_file(file_path: str, data:dict) -> Dict:
+    # 确保父目录存在
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
     with open(file_path, "w", encoding="utf-8") as json_file:
         json_file.write(json.dumps(data, indent=4, ensure_ascii=False))
 
@@ -174,19 +178,11 @@ def mkdir(path):
     os.makedirs(os.path.join(path, 'usage'), exist_ok=True)
 
 
-
-def get_info(args):
+def load_config():
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')) # '/home/hyn/LLM-MM-Agent-LLMINA-clean'
-
-    problem_path = os.path.join(project_root, 'MMBench', 'problem', f'{args.task}.json') #'/home/hyn/LLM-MM-Agent-LLMINA-clean/MMBench/problem/LLMINA.json'
     
     config_abs_path = os.path.join(project_root, 'config.yaml') # '/home/hyn/LLM-MM-Agent-LLMINA-clean/config.yaml'
     with open(config_abs_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
 
-    dataset_dir = os.path.join(project_root, 'MMBench', 'dataset', args.task) # '/home/hyn/LLM-MM-Agent-LLMINA-clean/MMBench/dataset/llmina'
-    output_dir = os.path.join(project_root, 'MMAgent', 'output', f"{config['method_name']}", f"{args.task}_{datetime.now().strftime('%Y%m%d-%H%M%S')}") # '/home/hyn/LLM-MM-Agent-LLMINA-clean/MMAgent/output/LLMINA-LangGraph/llmina_20251029-155016'
-
-    mkdir(output_dir)
-    print(f'Processing {problem_path}..., config: {config}')
-    return problem_path, config, dataset_dir, output_dir
+    return config

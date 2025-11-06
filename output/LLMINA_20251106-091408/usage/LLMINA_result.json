@@ -1,0 +1,10 @@
+{
+    "status": "success",
+    "solver_path": "output/LLMINA_20251106-091408/llm_solver_final.py",
+    "errors": [],
+    "llm_usage": {
+        "completion_tokens": 26873,
+        "prompt_tokens": 104033,
+        "total_tokens": 130906
+    }
+}

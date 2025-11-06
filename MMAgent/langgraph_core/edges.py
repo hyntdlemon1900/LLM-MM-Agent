@@ -4,7 +4,7 @@
 """
 
 from typing import Callable, Dict, Any, List, Literal, Union
-from .state import AgentState, LLMINAState, StandardModelingState
+from .state import AgentState
 
 
 # ============ 条件函数类型 ============
@@ -74,7 +74,7 @@ def should_retry(state: AgentState) -> ConditionalEdgeResult:
 
 # ============ LLMINA 专用条件函数 ============
 
-def should_clarify_more(state: LLMINAState) -> ConditionalEdgeResult:
+def should_clarify_more(state: AgentState) -> ConditionalEdgeResult:
     """
     判断是否需要更多澄清
     
@@ -108,7 +108,7 @@ def should_clarify_more(state: LLMINAState) -> ConditionalEdgeResult:
     return 'clarify'
 
 
-def should_refine_modeling(state: LLMINAState) -> ConditionalEdgeResult:
+def should_refine_modeling(state: AgentState) -> ConditionalEdgeResult:
     """
     判断是否需要细化建模
     
@@ -138,7 +138,7 @@ def should_refine_modeling(state: LLMINAState) -> ConditionalEdgeResult:
     return 'decompose'
 
 
-def task_solver_router(state: LLMINAState) -> ConditionalEdgeResult:
+def task_solver_router(state: AgentState) -> ConditionalEdgeResult:
     """
     任务求解路由器
     
@@ -163,7 +163,7 @@ def task_solver_router(state: LLMINAState) -> ConditionalEdgeResult:
     return 'solve_next'
 
 
-def validation_router(state: LLMINAState) -> ConditionalEdgeResult:
+def validation_router(state: AgentState) -> ConditionalEdgeResult:
     """
     验证路由器
     
@@ -200,7 +200,7 @@ def validation_router(state: LLMINAState) -> ConditionalEdgeResult:
 
 # ============ 标准建模专用条件函数 ============
 
-def problem_type_router(state: StandardModelingState) -> str:
+def problem_type_router(state: AgentState) -> str:
     """
     问题类型路由器
     
@@ -215,7 +215,7 @@ def problem_type_router(state: StandardModelingState) -> str:
     return 'unknown'
 
 
-def task_execution_router(state: StandardModelingState) -> ConditionalEdgeResult:
+def task_execution_router(state: AgentState) -> ConditionalEdgeResult:
     """
     任务执行路由器
     

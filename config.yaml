@@ -2,14 +2,16 @@
 
 # Model configuration
 model_name: "qwen3-30b-a3b"
-method_name: "LLMINA-LangGraph"
 task: "LLMINA"
 api_key: "any"  # 可通过环境变量 LLM_API_KEY 覆盖
+api_base: "http://192.168.1.44:8021/v1"  # LLM API base URL
 
 # General settings
 temperature: 0.7
 max_tokens: 4096
 timeout: 300
+
+enable_monitoring: false
 
 # LLMINA specific configuration
 llmina:
@@ -17,9 +19,7 @@ llmina:
   modeling_rounds: 2
   default_task_num: 3
   enable_checkpoints: false
-  enable_monitoring: false
-  visualize: false
-  viz_output: "workflow.png"
+  
   clarification_interactive: true
   
   # Agent configurations
@@ -63,6 +63,13 @@ output:
 paths:
   dataset: "MMBench/dataset"
   problem: "MMBench/problem"
-  output: "MMAgent/output"
-  checkpoints: "./checkpoints"
-  logs: "./logs"
+  output: "./output"
+  checkpoints: "checkpoints"
+  logs: "logs"
+
+# Problem-specific settings
+# Each problem (e.g., LLMINA) should provide its own evaluation module
+# in MMBench/problem/<problem_name>/evaluation.py
+problem_config:
+  # This will be set by the main program based on the task
+  evaluation_module: ""  # Path to user's evaluation.py
