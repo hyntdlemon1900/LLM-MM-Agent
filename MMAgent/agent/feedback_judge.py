@@ -1,5 +1,5 @@
 
-from prompt.llmina_template import AGENT_FEEDBACK_JUDGE_PROMPT
+from MMAgent.prompt.prompt_template import AGENT_FEEDBACK_JUDGE_PROMPT
 
 class ProblemJudge:
     """

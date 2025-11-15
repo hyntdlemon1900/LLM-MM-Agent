@@ -1,4 +1,4 @@
-from prompt.llmina_template import PROBLEM_CLARIFACATION_PROMPT
+from MMAgent.prompt.prompt_template import PROBLEM_CLARIFACATION_PROMPT
 
 class ProblemClarification:
     def __init__(self, llm):

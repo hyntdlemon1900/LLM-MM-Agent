@@ -2,7 +2,7 @@
 LLMINA问题澄清总结智能体
 用于在交互式问题澄清过程中总结用户提供的新增有效信息
 """
-from prompt.llmina_template import CLARIFICATION_ROUND_SUMMARY_PROMPT, CLARIFICATION_FINAL_SUMMARY_PROMPT
+from MMAgent.prompt.prompt_template import CLARIFICATION_ROUND_SUMMARY_PROMPT, CLARIFICATION_FINAL_SUMMARY_PROMPT
 
 
 class ProblemClarificationSummary:

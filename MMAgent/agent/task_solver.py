@@ -565,20 +565,7 @@ def _format_previous_tasks( past_results: Dict[int, Dict]) -> str:
 ```
 
 **Note:** This code already includes the implementation of tasks 1-{last_task_id}. Build upon it."""
-    
-def _get_copy_hints( past_results: Dict[int, Dict]) -> str:
-        """获取复制提示"""
-        if not past_results:
-            return "# (No previous tasks to copy)"
-        
-        hints = []
-        for tid in sorted(past_results.keys()):
-            task = past_results[tid]
-            desc = task.get('task_description', '')
-            desc_short = desc[:50].replace('\n', ' ') if desc else 'N/A'
-            hints.append(f"# Task {tid}: {desc_short}... [copy exact implementation]")
-        
-        return "\n    ".join(hints)
+
     
 def _get_dependency_info_from_state( dependency_dag: Dict, dependency_analysis: list, past_results: Dict[int, Dict], task_id: int) -> str:
         """

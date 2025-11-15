@@ -6,6 +6,7 @@
 from typing import TypedDict, List, Dict, Any, Optional, Annotated
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 
 
 def merge_lists(left: List, right: List) -> List:
@@ -42,8 +43,19 @@ class AgentState(TypedDict, total=False):
     task_dir: str  # 任务目录路径
     problem_path: str  # 问题文件路径
     problem_str: str  # 问题描述字符串
-    config: Dict[str, Any]  # 配置信息
     output_dir: str  # 输出目录
+    
+    # ============ 配置参数（从 config 提取）============
+    template_dir: str  # 代码模板目录
+    runtime_dir: str  # 运行时目录
+    problem_dir: str  # 问题目录
+    
+    # ============ 工作流配置 ============
+    max_loops: int  # 最大循环次数
+    max_retries: int  # 最大重试次数
+    algorithm_design_max_rounds: int  # 算法设计最大轮次
+    modeling_max_rounds: int  # 建模最大轮次
+    max_validation_attempts: int  # 最大验证尝试次数
     
     # ============ LLM 相关 ============
     llm: Any  # LLM 实例
@@ -54,33 +66,31 @@ class AgentState(TypedDict, total=False):
     # ============ 工作流控制 ============
     next_action: str  # 下一步动作
     loop_count: int  # 循环计数器
-    max_loops: int  # 最大循环次数
+    current_retry: int  # 当前重试次数
     
     # ============ 错误处理 ============
     errors: Annotated[List[str], merge_lists]  # 错误记录
     warnings: Annotated[List[str], merge_lists]  # 警告记录
     
-    # ============ 问题澄清阶段 ============
-    clarification_round: int  # 澄清轮次
+    # ============ 启发式函数生成阶段 ============
+    heuristic_functions: List[Dict[str, Any]]  # 启发式函数架构列表
+    current_function_id: int  # 当前正在生成的函数ID
+    function_codes: Annotated[Dict[int, str], merge_dicts]  # 函数ID -> 生成的代码
     
-    # ============ 算法方案设计阶段 ============
-    algorithm_solution: str  # 算法求解方案
-    algorithm_design_round: int  # 方案设计轮次
-    modeling_solution: str  # 建模方案（别名）
+    # ============ 启发式求解器模板 ============
+    pyomo_reference_code: str  # Pyomo建模代码（参考）
+    heuristic_template_code: str  # HeuristicSolver模板代码
+    heuristic_template_path: str  # HeuristicSolver模板文件路径
     
-    # ============ 任务分解阶段 ============
-    task_descriptions: List[str]  # 任务描述列表
-    tasknum: int  # 任务数量
-    task_dependency_analysis: List[str]  # 任务依赖分析
-    dependency_dag: Dict[str, List[str]]  # 依赖 DAG
-    execution_order: List[int]  # 执行顺序
-    
-    # ============ 任务求解阶段 ============
-    current_task_id: int  # 当前任务 ID
-    task_results: Annotated[Dict[int, Dict[str, Any]], merge_dicts]  # 任务结果
+    # ============ 中间结果 ============
+    intermediate_results: Annotated[Dict[str, Any], merge_dicts]  # 中间结果存储
     
     # ============ 最终结果 ============
     solver_code_path: str  # solver 代码路径
+    
+    # ============ 评估相关 ============
+    evaluation_config: Dict[str, Any]  # 评估配置（拓扑、INA预算、任务数量等）
+    evaluation_results: Dict[str, Any]  # 评估结果
 
 class WorkflowMetadata(TypedDict):
     """工作流元数据"""
@@ -97,47 +107,104 @@ class WorkflowMetadata(TypedDict):
 
 # ============ 状态工厂函数 ============
 def create_agent_state(
-    config: Dict[str, Any],
     llm: Any,
+    config: Dict[str, Any],
     task_name: str,
-    task_dir: str,
-    problem_path: str, 
-    output_dir: str, 
+    output_dir: str,
 ) -> AgentState:
-    """创建初始状态"""
+    """
+    创建初始状态
+    
+    Args:
+        llm: LLM 实例
+        config: 配置字典（从 config.yaml 加载）
+        task_name: 任务名称
+        output_dir: 输出目录
+    
+    Returns:
+        初始化的 AgentState
+    """
+    # 从 config 解析路径
+    problem_base = config.get('paths', {}).get('problem', 'MMBench/problem')
+    task_dir = Path(problem_base) / task_name
+    problem_path = str(task_dir / 'problem.json')
+    
+    # 验证路径存在
+    if not task_dir.exists():
+        raise FileNotFoundError(f"Task directory not found: {task_dir}")
+    if not Path(problem_path).exists():
+        raise FileNotFoundError(f"Problem file not found: {problem_path}")
+    
+    # 根据 task_dir 构造路径
+    template_dir = str(task_dir / 'code_template')
+    runtime_dir = str(task_dir / 'runtime')
+    problem_dir = str(task_dir)
+    
+    # 从 config 提取工作流配置
+    max_loops = config.get('max_loops', 10)
+    max_retries = config.get('max_retries', 2)
+    algorithm_design_max_rounds = config.get('algorithm_design_max_rounds', 2)
+    modeling_max_rounds = config.get('modeling_max_rounds', 2)
+    max_validation_attempts = config.get('max_validation_attempts', 2)
+    
     return AgentState(
+        # 核心输入
         task_name=task_name,
-        task_dir=task_dir,
+        task_dir=runtime_dir,  # task_dir 指向 runtime 目录
         problem_path=problem_path,
         problem_str="",
-        config=config,
         output_dir=output_dir,
+        
+        # 配置参数（从 task_dir 构造）
+        template_dir=template_dir,
+        runtime_dir=runtime_dir,
+        problem_dir=problem_dir,
+        
+        # 工作流配置
+        max_loops=max_loops,
+        max_retries=max_retries,
+        algorithm_design_max_rounds=algorithm_design_max_rounds,
+        modeling_max_rounds=modeling_max_rounds,
+        max_validation_attempts=max_validation_attempts,
+        
+        # LLM
         llm=llm,
+        
+        # 初始状态
         messages=[],
-        next_action="clarification",
+        next_action="load_problem",  # 第一步是加载问题
         loop_count=0,
-        max_loops=config.get('max_loops', 10),
+        current_retry=0,
         errors=[],
         warnings=[],
-        clarification_round=0,
-        algorithm_solution="",
-        algorithm_design_round=0,
-        modeling_solution="",
-        task_descriptions=[],
-        tasknum=0,
-        task_dependency_analysis=[],
-        dependency_dag={},
-        execution_order=[],
-        current_task_id=0,
-        task_results={},
-        solver_code_path=""
+        heuristic_functions=[],
+        current_function_id=0,
+        function_codes={},
+        intermediate_results={},
+        pyomo_reference_code="",
+        heuristic_template_code="",
+        heuristic_template_path="",
+        solver_code_path="",
+        
+        # 评估配置（默认值）
+        evaluation_config={
+            'topo_name': 'FatTree',
+            'ina_num_list': [3],
+            'jobs_num_list': [6],
+            'instances_num': 2,
+            'solver_name': 'gurobi',
+            'time_limit': 300,
+            'mip_gap': 0.01,
+            'verbose': True
+        },
+        evaluation_results={}
     )
 
 # ============ 状态验证函数 ============
 
 def validate_state(state: AgentState) -> bool:
     """验证状态是否有效"""
-    required_fields = ['problem_path', 'config', 'output_dir', 'llm']
+    required_fields = ['problem_path', 'output_dir', 'llm']
     return all(field in state for field in required_fields)
 
 

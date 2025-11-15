@@ -1,47 +1,29 @@
 from typing import List
-from prompt.llmina_template import TASK_DECOMPOSE_PROMPT, TASK_DESCRIPTION_PROMPT
-from utils.utils import read_json_file
+from MMAgent.prompt.prompt_template import TASK_DECOMPOSE_PROMPT, TASK_DESCRIPTION_PROMPT
 
 
 class ProblemDecompose:
+    """
+    任务分解智能体
+    
+    负责将高层次的算法求解方案分解为具体的可实施子任务，
+    并对每个子任务进行细化描述
+    """
     def __init__(self, llm):
         self.llm = llm
-        # LLMINA问题使用专门的分解原则，不依赖于通用的decompose_prompt.json
-        self.llmina_decompose_principle = self._get_llmina_principle()
-
-    def _get_llmina_principle(self):
-        """
-        LLMINA问题的灵活分解指导原则
-        
-        提供关键考虑点而非强制步骤，允许模型根据问题特征自主分解
-        """
-        return """
-When decomposing a solution approach for deterministic optimization problems with fully specified mathematical formulations (where decision variables, objective functions, and constraints are explicitly provided), consider the following key characteristics and guidance principles:
-
-**Problem Nature:**
-This type of problem differs fundamentally from open-ended mathematical modeling problems. The mathematical model is already given—the core challenge is designing an efficient algorithm to solve it, not building the model itself. Focus on algorithm design and implementation rather than data exploration or hypothesis formulation.
-
-**Key Considerations for Decomposition:**
-
-1. **Algorithmic Thinking:** The decomposition should reflect algorithm design phases rather than data analysis stages. Consider how algorithms for combinatorial optimization or constraint satisfaction problems are typically structured.
-
-2. **Constraint Criticality:** All constraints in the given formulation are hard requirements that must be strictly satisfied. Any subtask dealing with solution construction or modification must ensure feasibility. Consider when and how constraint validation should occur.
-
-3. **Solution Quality vs. Feasibility:** There's a fundamental trade-off between quickly finding a feasible solution and finding a high-quality solution. Consider whether your decomposition separates these concerns or integrates them.
-
-4. **Domain Knowledge Utilization:** The problem may have specific structural properties (e.g., network topology, resource distribution patterns) that can guide algorithm design. Consider whether subtasks should leverage such domain-specific insights.
-
-5. **Modularity and Integration:** Algorithm components need to work together as a cohesive system. Consider how different subtasks will interface with each other and with external evaluation tools.
-
-**Flexibility in Decomposition:**
-You are NOT required to follow any fixed number of subtasks or predefined stages. Analyze the specific problem and solution approach, then decompose it in whatever way makes the most logical and practical sense. Some solutions may naturally divide into 2-3 major phases, others into 5-6 distinct components. Let the problem structure guide your decomposition.
-"""
 
     def decompose(self, modeling_problem: str, modeling_solution: str):
-        # 对于LLMINA问题，使用专用的分解原则
-        decomposed_principle = self.llmina_decompose_principle
+        """
+        将算法求解方案分解为一系列子任务
+        
+        Args:
+            modeling_problem: 问题描述
+            modeling_solution: 算法求解方案（来自 ProblemSolving 节点）
+        
+        Returns:
+            List[str]: 子任务描述列表
+        """
         prompt = TASK_DECOMPOSE_PROMPT.format(
-            decomposed_principle=decomposed_principle,
             modeling_problem=modeling_problem,
             modeling_solution=modeling_solution
         )
@@ -49,25 +31,66 @@ You are NOT required to follow any fixed number of subtasks or predefined stages
         tasks = [task.strip() for task in answer.split('---') if task.strip()]
         return tasks
 
-    def refine(self, modeling_problem: str, problem_analysis: str, modeling_solution: str, decomposed_subtasks: List[str], task_i: int):
-        decomposed_subtasks_str = '\n'.join(decomposed_subtasks)
+    def refine(self, modeling_problem: str, modeling_solution: str, 
+               decomposed_subtasks: List[str], task_i: int):
+        """
+        细化指定子任务的描述
+        
+        Args:
+            modeling_problem: 问题描述
+            modeling_solution: 算法求解方案
+            decomposed_subtasks: 所有子任务列表
+            task_i: 要细化的子任务索引（从0开始）
+        
+        Returns:
+            str: 细化后的子任务描述
+        """
+        decomposed_subtasks_str = '\n---\n'.join(
+            [f"Subtask {i+1}:\n{task}" 
+             for i, task in enumerate(decomposed_subtasks)]
+        )
+        
         prompt = TASK_DESCRIPTION_PROMPT.format(
             modeling_problem=modeling_problem,
-            problem_analysis=problem_analysis,
             modeling_solution=modeling_solution,
             decomposed_subtasks=decomposed_subtasks_str,
-            task_i=task_i+1
+            task_i=task_i + 1  # 显示为从1开始的任务编号
         )
         answer = self.llm.generate(prompt)
         return answer
 
     def decompose_and_refine(self, modeling_problem: str, modeling_solution: str):
+        """
+        完整的分解和细化流程
+        
+        1. 将算法方案分解为子任务
+        2. 逐个细化每个子任务的描述
+        
+        Args:
+            modeling_problem: 问题描述
+            modeling_solution: 算法求解方案
+        
+        Returns:
+            Tuple[List[str], int]: (细化后的子任务列表, 子任务数量)
+        """
+        # 第一步：分解为子任务
+        print('Decomposing solution plan into subtasks...')
         decomposed_subtasks = self.decompose(
             modeling_problem, modeling_solution
         )
         decomposed_subtasks = [t for t in decomposed_subtasks if t.strip()]
+        
+        # 第二步：细化每个子任务
+        print(f'Refining {len(decomposed_subtasks)} subtasks...')
         for task_i in range(len(decomposed_subtasks)):
-            refined_subtask = self.refine(modeling_problem, '', modeling_solution, decomposed_subtasks, task_i)
+            print(f'  Refining Subtask {task_i+1}/{len(decomposed_subtasks)}')
+            refined_subtask = self.refine(
+                modeling_problem, 
+                modeling_solution, 
+                decomposed_subtasks, 
+                task_i
+            )
             decomposed_subtasks[task_i] = refined_subtask
+        
         tasknum = len(decomposed_subtasks)
         return decomposed_subtasks, tasknum

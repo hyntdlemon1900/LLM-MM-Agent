@@ -7,12 +7,15 @@ from .state import AgentState, create_agent_state
 from .graph import build_workflow
 from .nodes import (
     load_problem_node,
-    problem_clarification_node,
+    generate_heuristic_template_node,
+    heuristic_architect_node,
+    function_code_generator_node,
+    code_integration_node,
+    heuristic_evaluation_node,
     algorithm_design_node,
     task_decompose_node,
     dependency_analysis_node,
-    task_solving_node,
-    code_integration_node
+    task_solving_node
 )
 
 __all__ = [
@@ -23,12 +26,15 @@ __all__ = [
     'build_workflow',
     # Nodes
     'load_problem_node',
-    'problem_clarification_node',
+    'generate_heuristic_template_node',
+    'heuristic_architect_node',
+    'function_code_generator_node',
+    'code_integration_node',
+    'heuristic_evaluation_node',
     'algorithm_design_node',
     'task_decompose_node',
     'dependency_analysis_node',
-    'task_solving_node',
-    'code_integration_node'
+    'task_solving_node'
 ]
 
 __version__ = '1.0.0'
