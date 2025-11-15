@@ -7,7 +7,7 @@ LLMINA 算法方案设计 Agent
 - 而是设计"如何用算法求解问题"的策略方案
 - 包括：核心方法论、算法步骤、关键策略、可行性分析等
 """
-from prompt.llmina_template import PROBLEM_SOLVE_PROMPT, PROBLEM_SOLVE_CRITIQUE_PROMPT, PROBLEM_SOLVE_IMPROVEMENT_PROMPT
+from MMAgent.prompt.prompt_template import PROBLEM_SOLVE_PROMPT, PROBLEM_SOLVE_CRITIQUE_PROMPT, PROBLEM_SOLVE_IMPROVEMENT_PROMPT
 
 
 class ProblemSolving:

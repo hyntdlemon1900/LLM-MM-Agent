@@ -1,0 +1,22 @@
+{
+  "metadata": {
+    "topo_name": "FatTree",
+    "solver_name": "gurobi",
+    "time_limit": 300,
+    "mip_gap": 0.01,
+    "instances_num": 2
+  },
+  "results": {
+    "K3_jobs6": {
+      "K": 3,
+      "jobs_num": 6,
+      "success_count": 0,
+      "average_makespan": Infinity,
+      "average_solve_time": 0,
+      "min_makespan": null,
+      "max_makespan": null,
+      "min_solve_time": null,
+      "max_solve_time": null
+    }
+  }
+}

@@ -8,8 +8,24 @@
             "name": "Python Debugger: Current File",
             "type": "debugpy",
             "request": "launch",
-            "program": "${file}",
-            "console": "integratedTerminal"
+            "module": "MMAgent.main_langgraph",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "args": [
+                "--task", "LLMINA",
+                //"--checkpoint",
+                //"--list-checkpoints"
+            ]
+        },
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "MMBench.problem.LLMINA.runtime.evaluate_pyomo_solver",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
         }
+
     ]
+    
 }

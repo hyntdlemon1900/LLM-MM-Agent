@@ -56,7 +56,7 @@ def should_retry(state: AgentState) -> ConditionalEdgeResult:
         'error': 进入错误处理
     """
     # 获取重试配置
-    max_retries = state.get('config', {}).get('max_retries', 3)
+    max_retries = state.get('max_retries', 3)
     current_retry = state.get('current_retry', 0)
     
     # 检查是否有错误
@@ -74,40 +74,6 @@ def should_retry(state: AgentState) -> ConditionalEdgeResult:
 
 # ============ LLMINA 专用条件函数 ============
 
-def should_clarify_more(state: AgentState) -> ConditionalEdgeResult:
-    """
-    判断是否需要更多澄清
-    
-    Returns:
-        'clarify': 继续澄清
-        'modeling': 进入建模阶段
-        'error': 错误处理
-    """
-    # 检查错误
-    if state.get('errors'):
-        return 'error'
-    
-    # 检查澄清配置
-    config = state.get('config', {})
-    clarification_enabled = config.get('clarification_enabled', True)
-    
-    if not clarification_enabled:
-        return 'modeling'
-    
-    # 检查澄清轮次
-    clarification_round = state.get('clarification_round', 0)
-    max_rounds = config.get('clarification_max_rounds', 3)
-    
-    if clarification_round >= max_rounds:
-        return 'modeling'
-    
-    # 检查是否有澄清总结（表示澄清完成）
-    if state.get('clarification_summary'):
-        return 'modeling'
-    
-    return 'clarify'
-
-
 def should_refine_modeling(state: AgentState) -> ConditionalEdgeResult:
     """
     判断是否需要细化建模
@@ -123,15 +89,15 @@ def should_refine_modeling(state: AgentState) -> ConditionalEdgeResult:
     
     # 检查建模轮次
     modeling_round = state.get('modeling_round', 0)
-    max_rounds = state.get('config', {}).get('modeling_max_rounds', 2)
+    max_rounds = state.get('modeling_max_rounds', 2)
     
     if modeling_round >= max_rounds:
         return 'decompose'
     
     # 检查建模方案质量（可以添加质量评估逻辑）
-    modeling_solution = state.get('modeling_solution', '')
+    algorithm_solution = state.get('algorithm_solution', '')
     
-    if len(modeling_solution) < 100:  # 简单的质量检查
+    if len(algorithm_solution) < 100:  # 简单的质量检查
         if modeling_round < max_rounds - 1:
             return 'refine'
     
@@ -189,7 +155,7 @@ def validation_router(state: AgentState) -> ConditionalEdgeResult:
         return 'passed'
     
     # 检查重试次数
-    max_attempts = state.get('config', {}).get('max_validation_attempts', 2)
+    max_attempts = state.get('max_validation_attempts', 2)
     attempt_count = len([r for r in validation_results if not r.get('is_valid', True)])
     
     if attempt_count >= max_attempts:
@@ -313,14 +279,6 @@ def create_loop_edge(
 
 # LLMINA 工作流条件边
 LLMINA_EDGES = {
-    'clarification': create_conditional_edge(
-        should_clarify_more,
-        {
-            'clarify': 'problem_clarification',
-            'modeling': 'problem_modeling',
-            'error': 'error_handler'
-        }
-    ),
     'modeling': create_conditional_edge(
         should_refine_modeling,
         {

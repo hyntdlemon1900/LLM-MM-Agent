@@ -6,13 +6,30 @@ task: "LLMINA"
 api_key: "any"  # 可通过环境变量 LLM_API_KEY 覆盖
 api_base: "http://192.168.1.44:8021/v1"  # LLM API base URL
 
-# LLMINA specific configuration
-llmina:
-  enable_checkpoints: false
-  clarification_interactive: true
-
-# Task solving configuration
+# Workflow configuration
+max_loops: 10  # 最大循环次数
 max_retries: 2  # 任务求解最大重试次数
+
+# Clarification configuration
+clarification_enabled: True  # 是否启用问题澄清
+clarification_max_rounds: 3  # 澄清最大轮次
+clarification_interactive: False  # 澄清是否交互式
+
+# Algorithm design configuration
+algorithm_design_max_rounds: 2  # 算法设计迭代轮次
+
+# Modeling configuration
+modeling_max_rounds: 2  # 建模最大轮次
+max_validation_attempts: 2  # 最大验证尝试次数
+
+# Checkpoint configuration
+checkpoint:
+  enabled: false                         # 是否默认启用检查点（可通过 --checkpoint 覆盖）
+  path: "./checkpoints/llmina.db"       # SQLite 数据库路径
+  auto_cleanup: true                     # 自动清理旧检查点
+  max_checkpoints: 10                    # 保留最近 N 个运行
+  cleanup_days: 7                        # 清理 N 天前的检查点
+  verbose: true                          # 打印检查点信息
 
 # Paths (relative to project root)
 paths:
