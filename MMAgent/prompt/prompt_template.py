@@ -10,11 +10,6 @@ Variable Description:
 
 Problem Formulation:
 {problem_formulation}
-
-Pyomo Reference Code:
-The following is a reference Pyomo-based MILP solver implementation for this problem. You can refer to its structure, constraints, and modeling approach when designing your solution:
-
-{pyomo_reference_code}
 """
 
 PROBLEM_CLARIFACATION_PROMPT = """\
@@ -37,659 +32,184 @@ Please confirm:
 * If you find any part of my **task description or interface definitions** to be unclear or conflicting, please list them using a numbered format (1., 2., 3.).
 """
 
-AGENT_FEEDBACK_JUDGE_PROMPT = """\
-Agent Feedback:
-{agent_feedback}
 
-Analyze the current state of the requested task or question. If there are any remaining ambiguities, unsolved sub-problems, or unfulfilled requirements from the Agent Feedback, respond solely with the string "True". If the task is fully completed, understood, and all requirements are met, respond solely with the string "False". Do not include any additional text or explanation.
-"""
-
-
-CLARIFICATION_ROUND_SUMMARY_PROMPT = """\
-You are a professional information extraction assistant. Your task is to extract and summarize only the **new, valid, and actionable** information provided by the user in this round of interaction.
-
-## Current Context
-
-**Current Problem Description:**
-{problem_description}
-
-**Agent Feedback/Question:**
-{agent_feedback}
-
-**User Reply:**
-{user_reply}
-
----
-
-## Task Requirements
-
-1. **Extract Key Information**: Identify only the new, specific, and actionable details from the user's reply that add clarity or constraints to the problem.
-
-2. **Avoid Redundancy**: Do NOT repeat information already present in the current problem description.
-
-3. **Be Concise**: Output a single paragraph that can be directly appended to the problem description.
-
-4. **No Filler Text**: Do not include pleasantries, acknowledgments, or meta-commentary. Output only the extracted information.
-
-5. **Output Format**: Provide the summary as plain text without any labels, prefixes, or special formatting.
-
-## Output
-
-Please provide the extracted key information directly:
-"""
-
-
-CLARIFICATION_FINAL_SUMMARY_PROMPT = """\
-You are a professional information consolidation assistant. Your task is to synthesize all the new and valuable information gathered across multiple rounds of clarification into a single, coherent, and self-contained summary.
-
-## Clarification History
-
-{history_content}
-
----
-
-## Task Requirements
-
-1. **Consolidate Information**: Merge all new information from the multiple rounds into a unified summary.
-
-2. **Remove Redundancy**: Eliminate duplicate or overlapping information across different rounds.
-
-3. **Ensure Coherence**: The summary should be self-contained and logically structured, suitable for appending to the original problem description.
-
-4. **Maintain Clarity**: Use clear and concise language. Avoid ambiguous or vague statements.
-
-5. **No Meta-Commentary**: Do not include phrases like "The user mentioned..." or "In round X...". Present the information directly.
-
-6. **Output Format**: Provide the consolidated summary as plain text without any labels, prefixes, or special formatting.
-
-## Output
-
-Please provide the consolidated summary directly:
-"""
-
-DECOMPOSE_PRINCIPLE_PROMPT = """\
-The solution to a mathematical modeling problem is typically broken down into a series of subtasks, each addressing a different aspect of the overall challenge. Based on the examples provided below, summarize what each subtask in tasks 1 through {tasknum} generally involves, with a focus on the principles of task decomposition in mathematical modeling.
-
-<examples>
-
-{examples}
-
-</examples>
-
-Requirements:
-1. The summary should focus on the general methods and approaches used in mathematical modeling tasks, not tied to any specific examples or cases provided.
-2. The response should not include any details specific to the examples in order to avoid providing any implicit solutions or insights from them.
-3. The summary should present a theoretical description of the techniques used at each stage of task decomposition, without any reference to particular problems or contexts.
-4. Each subtask should be described as comprehensively and in as much detail as possible within a single paragraph, capturing the essential steps and considerations for that task in a general mathematical modeling framework. The description should be comprehensive, highlighting the key methodologies without resorting to bullet points, numbered lists, or overly formalized structure.
-5. Do not provide any form of examples or mention any instances.
-"""
-
-
-TASK_DECOMPOSE_PROMPT = """\
-# Mathematical Modeling Problem:
-{modeling_problem}
-
-# Algorithmic Solution Plan:
-{modeling_solution}
-
----
-
-## Role Definition:
-You are an expert task decomposition specialist responsible for breaking down the high-level algorithmic solution plan into a structured sequence of concrete, implementable subtasks.
-
-## Task Objective:
-Analyze the provided algorithmic solution plan and decompose it into a logical series of well-defined subtasks that collectively implement the complete algorithm. Each subtask should represent a distinct, cohesive component of the overall solution approach.
-
-## Decomposition Principles:
-
-### 1. Natural Algorithm Structure
-Respect the inherent structure of the algorithm as described in the solution plan:
-- Identify natural phases or stages in the algorithm (e.g., preprocessing, initialization, iterative optimization, post-processing)
-- Recognize logical groupings of related operations
-- Maintain the sequential or hierarchical relationships between algorithm components
-- Preserve the conceptual integrity of each algorithmic phase
-
-### 2. Clear Separation of Concerns
-Each subtask must have a distinct, non-overlapping responsibility:
-- Avoid mixing conceptually different operations in a single subtask
-- Separate data preparation from algorithmic decision-making
-- Distinguish between solution construction and solution validation/refinement
-- Keep discrete decision-making separate from continuous optimization
-- Isolate constraint handling from objective function optimization
-
-### 3. Completeness and Coverage
-Ensure the decomposition covers all aspects of the solution plan:
-- Every component, strategy, and mechanism mentioned in the plan must be addressed by at least one subtask
-- No algorithmic step or requirement should be left unassigned
-- All constraint categories mentioned must be explicitly handled
-- Both main algorithmic logic and supporting operations (validation, refinement, output) must be included
-
-### 4. Implementability Focus
-Each subtask should be defined at a level suitable for subsequent implementation:
-- Describe what computational operations need to be performed
-- Specify what data structures or algorithmic techniques are required
-- Clarify what inputs the subtask consumes and what outputs it produces
-- Indicate how the subtask contributes to the overall algorithm execution
-- Make the scope concrete enough that implementation requirements are clear
-
-### 5. Logical Dependencies
-Structure subtasks to reflect natural execution dependencies:
-- Earlier subtasks should provide necessary data or decisions for later subtasks
-- Avoid circular dependencies where tasks mutually depend on each other
-- Consider which tasks can potentially execute independently vs. which require sequential ordering
-- Ensure prerequisite tasks (data loading, preprocessing) precede tasks that need their results
-
-### 6. Appropriate Granularity
-Balance between too coarse and too fine decomposition:
-- Each subtask should be substantial enough to represent a meaningful algorithm component
-- Avoid trivial subtasks that represent single operations
-- Avoid overly complex subtasks that try to do too much
-- Aim for subtasks that represent natural units of work in algorithm implementation
-
-### 7. Flexibility in Number
-Do NOT assume a fixed number of subtasks. The decomposition should organically follow the structure of the solution plan:
-- Simple, direct algorithms may decompose into 2-3 major subtasks
-- Complex, multi-phase algorithms may require 5-8 or more subtasks
-- Let the problem complexity and solution approach guide the decomposition
-- Prioritize logical clarity over hitting an arbitrary subtask count
-
-## Output Format Requirements:
-
-Provide your decomposition as a sequence of subtask descriptions, where:
-- Each subtask is described comprehensively in a single, detailed paragraph
-- Separate consecutive subtask descriptions with '---' (three dashes on their own line)
-- Use plain text format without bullet points, numbered lists, or Markdown formatting
-- For each subtask, clearly convey:
-  * Its primary purpose and algorithmic role
-  * What inputs it requires (data, parameters, or results from previous subtasks)
-  * What operations or computations it performs
-  * What outputs or results it produces for subsequent subtasks or final output
-  * What methods, techniques, or strategies it employs
-  * How it relates to the overall algorithm workflow
-
-Ensure that reading all subtasks in sequence provides a complete, step-by-step blueprint for implementing the entire algorithmic solution plan without gaps or ambiguities.
-"""
-
-
-TASK_DESCRIPTION_PROMPT = """\
-# Mathematical Modeling Problem:
-{modeling_problem}
-
-# Algorithmic Solution Plan:
-{modeling_solution}
-
-# All Decomposed Subtasks:
-{decomposed_subtasks}
-
----
-
-## Role Definition:
-You are a task specification expert responsible for refining and clarifying the description of Subtask {task_i} to ensure it provides a complete, precise, and self-contained specification that can guide implementation.
-
-## Task Objective:
-Enhance the existing description of Subtask {task_i} by adding necessary detail, removing ambiguities, and ensuring all essential information is present for someone to understand exactly what this subtask entails and how to approach its implementation.
-
-## Refinement Requirements:
-
-### 1. Clear Purpose and Scope
-Articulate precisely what this subtask accomplishes:
-- State the primary objective in clear, concrete terms
-- Define the boundaries: what is included and what is explicitly out of scope
-- Explain how this subtask contributes to the overall algorithm
-- Clarify the algorithmic role this subtask plays (e.g., preprocessing, decision-making, optimization, validation)
-
-### 2. Input Specifications
-Explicitly identify all required inputs:
-- What data does this subtask need to operate on?
-- What parameters or configuration values are required?
-- What results from previous subtasks must be available?
-- What problem instance information is needed?
-- Are there any optional inputs that affect behavior?
-
-### 3. Output Specifications
-Clearly define what this subtask produces:
-- What are the primary outputs or results?
-- What data structures or formats are used for outputs?
-- Are outputs intermediate results for other subtasks, or final algorithm outputs?
-- What information must be preserved for downstream subtasks?
-- Are there any side effects (e.g., files written, state updates)?
-
-### 4. Algorithmic Approach
-Describe the methods and techniques to be employed:
-- What computational approach should be taken (e.g., greedy heuristic, linear programming, graph algorithm)?
-- Are there specific algorithms or data structures that should be used?
-- What problem-solving strategies are most appropriate for this subtask?
-- Are there established algorithmic patterns that apply?
-
-### 5. Key Considerations
-Highlight critical aspects that require attention:
-- What constraints must be respected during execution?
-- What are potential edge cases or special conditions to handle?
-- Where are the main sources of complexity or computational cost?
-- What trade-offs exist (e.g., speed vs. accuracy, simplicity vs. optimality)?
-- Are there validation or sanity checks that should be performed?
-
-### 6. Integration with Workflow
-Explain how this subtask fits into the larger algorithm:
-- What prerequisite subtasks must complete first?
-- Which subsequent subtasks depend on this subtask's outputs?
-- Can this subtask execute independently, or does it require tight integration?
-- How does it interact with the overall algorithm control flow?
-
-### 7. Self-Containment
-Ensure the description stands alone:
-- Provide sufficient context so the subtask can be understood without constantly referring to other subtasks
-- Define or clarify any specialized terms or concepts specific to this subtask
-- Avoid vague references like "as mentioned earlier" unless you restate the key point
-- Make implicit assumptions explicit
-
-## Output Format Requirements:
-Provide the refined subtask description as a single, comprehensive paragraph using plain text. Do not use bullet points, numbered lists, or Markdown formatting. The paragraph should be substantial and detailed, integrating all the above elements naturally into a cohesive narrative that fully specifies what Subtask {task_i} entails.
-
-Your refined description should enable someone to clearly understand the subtask's purpose, requirements, approach, and deliverables without needing to consult other documentation.
-
-REFINED SUBTASK {task_i} DESCRIPTION:
-"""
-
-
-
-PROBLEM_SOLVE_PROMPT = """\
-# Mathematical Modeling Problem:
-{modeling_problem}
-
----
-
-## Role Definition:
-You are an expert algorithmic strategist tasked with designing a comprehensive algorithmic solution plan for the given optimization problem. Your role is NOT to implement code or conduct testing, but rather to devise a high-level, systematic strategy that articulates how the problem should be approached and solved algorithmically.
-
-## Task Objective:
-Analyze the given problem comprehensively and produce a well-structured algorithmic solution plan that can guide subsequent implementation. Your output should demonstrate deep understanding of the problem structure, constraints, and objectives, while proposing a feasible and effective solving approach.
-
-## Required Analysis and Planning Components:
-
-### 1. Problem Structure Analysis
-Begin by thoroughly analyzing the problem to identify:
-- Core decision variables and their interdependencies (e.g., discrete placement decisions vs. continuous flow allocations)
-- Key constraint categories and their complexity (e.g., capacity constraints, flow conservation, coupling constraints)
-- Objective function characteristics (e.g., makespan minimization, throughput maximization)
-- Problem scale and computational challenges (e.g., combinatorial explosion, NP-hardness)
-- Critical trade-offs inherent in the problem (e.g., solution quality vs. computational tractability)
-
-### 2. Solution Methodology Selection
-Propose the fundamental algorithmic approach with clear justification:
-- Primary solving paradigm (e.g., decomposition-based methods, heuristic algorithms, relaxation techniques, greedy strategies, iterative refinement)
-- Rationale for methodology selection based on problem characteristics (complexity, scale, constraint structure)
-- Discussion of why alternative approaches may be less suitable
-- Expected computational complexity and scalability properties
-
-### 3. Algorithmic Solution Plan
-Provide a detailed, step-by-step plan outlining how the algorithm will solve the problem:
-- **Phase 1: Initialization and Preprocessing** - How will the problem data be structured? What preprocessing steps are necessary to facilitate efficient solving?
-- **Phase 2: Core Decision Making** - How will discrete decisions be determined? What heuristics or principles guide these choices?
-- **Phase 3: Continuous Optimization** - How will continuous variables be allocated given the discrete decisions? What optimization techniques apply?
-- **Phase 4: Constraint Satisfaction and Feasibility Enforcement** - How will violations be detected and corrected? What mechanisms ensure all constraints are respected?
-- **Phase 5: Solution Refinement and Optimization** - How will the solution quality be iteratively improved? When does the algorithm terminate?
-
-For each phase, clearly specify:
-- Input requirements (what information is needed from previous phases)
-- Core operations and decision logic
-- Output produced (what results are passed to subsequent phases)
-- Key algorithmic strategies employed
-
-### 4. Constraint Handling Strategy
-Explicitly address how each major constraint category will be satisfied:
-- Capacity constraints (switch processing, link bandwidth, port bandwidth)
-- Assignment constraints (worker-to-aggregation-point exclusivity)
-- Budget constraints (limited INA deployment budget)
-- Flow conservation and routing constraints
-- Coupling constraints between discrete and continuous decisions
-
-### 5. Optimization Strategy
-Articulate how solution quality will be optimized:
-- Mechanisms for objective function optimization (makespan minimization)
-- Strategies for balancing competing objectives or handling multi-objective aspects
-- Techniques for escaping local optima (if applicable)
-- Quality guarantees or approximation bounds (if achievable)
-
-### 6. Feasibility Assurance
-Explain how the algorithm ensures feasibility throughout:
-- Initial feasibility construction methods
-- Constraint checking mechanisms during solution generation
-- Repair or adjustment strategies when violations occur
-- Validation procedures before outputting final solution
-
-### 7. Scalability and Robustness Considerations
-Discuss how the approach handles variability:
-- Scaling to larger problem instances (more jobs, workers, switches, larger networks)
-- Handling edge cases (e.g., insufficient INA budget, highly skewed load distributions, network bottlenecks)
-- Robustness to parameter variations or data uncertainty
-- Computational efficiency measures to maintain tractability
-
-## Output Format Requirements:
-Your response must be comprehensive, detailed, and written in fluent natural language. Use plain text format with LaTeX notation for any necessary mathematical expressions. Structure your response as cohesive, well-connected paragraphs that flow logically from problem analysis to solution plan. Do NOT use bullet points, numbered lists, or Markdown formatting. Each component should be thoroughly explained in paragraph form, demonstrating the logical progression from problem understanding to algorithmic strategy.
-
-Your output should serve as a complete strategic blueprint that enables subsequent agents to understand the solving approach and decompose it into implementable subtasks.
-"""
-
-
-TEMPLATE_GENERATION_PROMPT = """\
-You are a code template generator. Your task is to analyze a Pyomo-based MILP solver implementation and generate a clean, simplified template function for an LLM-based solver.
-
-# Pyomo Solver Code:
-
-{pyomo_code}
-
----
-
-## Your Task:
-
-Analyze the Pyomo solver above and generate a **clean, simplified template function** called `llm_solver` that:
-
-1. **Has the same function signature** as the Pyomo solver's `__init__` method (excluding `self` and solver-specific parameters like `solver_name`, `time_limit`, `mip_gap`, `verbose`)
-
-2. **Has the same return format** as the Pyomo solver's `get_solution` method, but simplified to return only the essential decision variables needed by the evaluation system
-
-3. **Contains comprehensive docstring** that explains:
-   - What each input parameter represents (with examples from the Pyomo docstring)
-   - What the function should return (format and constraints)
-   - Key constraints that must be satisfied
-   - Implementation hints or considerations
-
-4. **Includes placeholder implementation** with:
-   - Data extraction from inputs
-   - Initialization of output data structures
-   - TODO comments indicating where the main logic should go
-   - A simple example strategy (as comments) that returns a valid (but not optimal) solution
-
-## Requirements:
-
-- **Keep it simple**: Don't include the full Pyomo implementation logic
-- **Focus on interface**: Make the input/output specification crystal clear
-- **Self-contained docstring**: The docstring should be comprehensive enough that an LLM can implement the function without seeing the Pyomo code
-- **Valid default solution**: The placeholder should return a syntactically valid solution (even if performance is poor)
-- **No external dependencies**: Don't import Pyomo or other optimization libraries in the template
-
-## Output Format:
-
-Generate **ONLY** the Python function code. Do not include explanations, markdown formatting, or any text outside the function definition.
-
-Example structure:
-
-```python
-def llm_solver(instance, network, K, jobs_num, Cs, topo_name):
-    \"\"\"
-    [Comprehensive docstring here explaining all inputs, outputs, constraints]
-    \"\"\"
-    
-    # Extract data
-    # ...
-    
-    # Initialize outputs
-    # ...
-    
-    # TODO: Implement your strategy here
-    
-    # Simple placeholder strategy (REPLACE THIS)
-    # ...
-    
-    return output1, output2
-```
-
-Now generate the template function:
-"""
-
-
-TASK_CODE_GENERATION_PROMPT = """\
-# Task {task_id} of {total_tasks}: Progressive Solver Implementation
-
-You are implementing **Task {task_id}** in a progressive, incremental development approach. Each task builds upon the previous task's code to gradually complete the full solver implementation.
-
----
-
-## Overall Algorithm Solution Plan
-
-{algorithm_solution}
-
----
-
-## Current Task Description (Task {task_id})
-
-{task_description}
-
----
-
-## Your Base Code ({base_code_type})
-
-Below is the code you should start from:
-
-```python
-{base_code}
-```
-
----
-
-## Context: Previous Task
-
-**Previous Task Description**: {previous_task_description}
-
-**Completed Tasks So Far**:
-{completed_tasks_summary}
-
----
-
-{focus_instruction}
-
----
-
-## Code Generation Requirements
-
-### 1. Code Structure
-- Generate a **complete, standalone solver function**
-- Function signature must match: `def llm_solver(instance, network, K, jobs_num, Cs, topo_name):`
-- Return format must match the expected output: `(ina_placement_expanded, jobs_routing_expanded)`
-
-### 2. Progressive Development Principle
-- **Keep ALL code from previous tasks**: Do not remove or modify implementations from completed tasks
-- **Add current task's logic**: Implement only the specific algorithm/logic described in Task {task_id}
-- **Clear separation**: Use comments to mark which code belongs to which task
-
-### 3. Code Organization
-```python
-def llm_solver(instance, network, K, jobs_num, Cs, topo_name):
-    # Data extraction (common)
-    # ...
-    
-    # ============================================================
-    # Task 1: [Task 1 description]
-    # ============================================================
-    # ... Task 1 implementation (DO NOT MODIFY if task_id > 1) ...
-    
-    # ============================================================
-    # Task 2: [Task 2 description]
-    # ============================================================
-    # ... Task 2 implementation (DO NOT MODIFY if task_id > 2) ...
-    
-    # ============================================================
-    # Task {task_id}: [Current task description]
-    # ============================================================
-    # ... YOUR NEW IMPLEMENTATION HERE ...
-    
-    # Return final solution
-    return ina_placement_expanded, jobs_routing_expanded
-```
-
-### 4. Implementation Guidelines
-- **Preserve working code**: If previous tasks have working implementations, keep them exactly as is
-- **Incremental changes only**: Only add/modify code relevant to Task {task_id}
-- **Maintain consistency**: Ensure new code integrates smoothly with existing code
-- **Comment clearly**: Mark what you added/changed for Task {task_id}
-
-### 5. Output Format
-- Return **ONLY** the complete Python code
-- No markdown code blocks (no ```python```)
-- No explanatory text before or after the code
-- The code should be ready to save directly to a .py file
-
----
-
-## Important Notes
-
-1. **Do not break existing functionality**: Previous tasks have been tested and work correctly
-2. **Focus on your task**: Implement only what Task {task_id} requires
-3. **Complete function**: Your output must be a complete, runnable solver function
-4. **No placeholders in completed sections**: Only use placeholders for future tasks (if any)
-
-Now generate the complete solver code for Task {task_id}:
-"""
-
-
-
-
-HEURISTIC_ARCHITECT_PROMPT = """\
-# Task: High-Level Algorithm Architecture Design
-
-You are an expert algorithm architect designing a **modular member function architecture** for a HeuristicSolver class.
-
+HEURISTIC_ARCHITECT_PROMPT = """
+````
+# Task: Design Heuristic Solution Strategy and Map to Modular Function Architecture
+You are a top-tier algorithm architect. Your task is to design a new **heuristic solution method**, `solve_with_heuristic()`, for an **existing** Solver Class.
+
+Your workflow must follow "Problem-Driven Design":
+1.  **Analyze & Strategize**: Analyze the problem and define a high-level `problem_analysis` and `strategy_overview`.
+2.  **Design Algorithm (Decomposition)**: Design a **concise, high-level algorithm** (`algorithmic_decomposition`). This should consist of **major, logical steps**, not a fine-grained list. Focus on the *algorithmic logic* for each step.
+3.  **Map to Architecture**: *After* designing the algorithm, define the `function_architecture` (the list of member functions) that will implement those algorithmic steps.
+The `solve_with_heuristic()` method itself will act as the "main" method to coordinate the calls to these helper functions that implement the strategic steps.
 ---
 
 ## Inputs:
-
 ### 1. Mathematical Modeling Problem
 {modeling_problem}
-
-### 2. HeuristicSolver Template Structure
+### 2. Existing Solver Class Code
 ```python
-{heuristic_template_code}
+{solver_class_code}
+```
+### 3. Target Method and Output
+**Target Method Signature:**
+Python
+```
+def solve_with_heuristic(self) -> dict:
+    \"\"\"
+    Solves the problem using a heuristic algorithm.
+    
+    Must return a dictionary with the same format as the `solve_with_pyomo()` 
+    method.
+    
+    You must analyze `solve_with_pyomo` in `ModelSolver` class
+    (specifically how `self.solution` is constructed) to determine the 
+    exact structure and keys of this dictionary.
+    \"\"\"
+    pass 
 ```
 
 ---
-
 ## Your Mission:
-
-Design a **high-level plan** that decomposes the heuristic algorithm into **member functions** (methods of the HeuristicSolver class). Each member function should have:
-- A clear, single responsibility
-- Well-defined inputs (primarily `self` for accessing class state)
-- Well-defined outputs (typically stored as instance variables or returned)
+Design a **high-level plan** as a single JSON object. This plan MUST focus on the **algorithm design first**.
+### Design Philosophy:
+- **Conciseness is Key**: Your primary goal is to design a **high-level algorithm**, not a minutely detailed functional breakdown.    
+- **Focus on Major Steps**: The `algorithmic_decomposition` should consist of a **small number** of significant, meaningful algorithmic steps. Avoid splitting simple operations into their own steps.    
+- **Map 1-to-1 (Mostly)**: A single major "Algorithm Step" should generally map to a single "Function" that implements it.
 
 ---
 
+## CRITICAL REQUIREMENT: REUSE EXISTING METHODS
+Your primary task is to **extend, not reinvent**.
+1.  **Analyze `ModelSolver` class:** Identify all existing methods (e.g., `_helper_utility`). These are your 'reusable tools'.
+2.  **Assume a 'Clean' State:** Your `solve_with_heuristic()` method is responsible for its *entire* workflow. It **cannot** assume that other methods (like an existing `_helper_utility` or `_build_model` from `solve_with_pyomo`) have already been run. If your new function needs the functionality provided by an existing method, it **must explicitly call `self._helper_utility`** (or whatever its real name is). Do not reimplement this logic.
+3.  **Update Dependencies:** When a new function (e.g., `_step_1_function`) *calls* an existing method (e.g., `_helper_utility`), it **MUST** list that existing method in its `dependencies` array.
+
+## ! IMPORTANT: DO NOT COPY EXAMPLE NAMES
+The method names used in this prompt's examples (like `_helper_utility`) are for **illustration only**. They are generic placeholders.
+**DO NOT** output the literal string `"_helper_utility"` in your JSON unless, by some coincidence, a method with that *exact* name actually exists in the `ModelSolver` class input.
+Your task is to **find the *actual*, *real* helper methods** in the provided code (e.g., `_calculate_initial_routes`, `_get_problem_parameters`, etc. -- whatever they are *actually* named) and list *those real names* in the `dependencies` array.
+
 ## Design Principles:
-
-### 1. Class-Centric Design
-- **All functions are member methods** with `self` as the first parameter
-- **Leverage instance variables (`self.*`)** for:
-  * Problem data (initialized in `__init__` from parameters)
-  * Algorithm state (persistent data across method calls)
-  * Intermediate results (computed values needed by multiple methods)
-
-### 2. Minimize Parameter Passing
-- **Access static problem data via `self`** (don't pass as parameters)
-- **Store algorithm state in instance variables** (persistent state in `self.*`)
-- **Only pass parameters when necessary** (dynamic values specific to a method invocation)
-
-### 3. Member Variable Management
-- **Track evolving class state**: As you design functions, identify which instance variables they will:
-  * **Read** (access existing `self.*` attributes)
-  * **Write** (create/update `self.*` attributes)
-- **Document member variables**: For each function, note which `self.*` variables it uses or creates
-
-### 4. Functional Decomposition
-Analyze the algorithmic solution plan and identify the key functional components needed to implement it. Break down the algorithm into member functions based on:
-- The natural flow and stages described in the solution plan
-- Logical groupings of operations that serve a common purpose
-- The data transformations and computations required
-- The dependencies between different algorithmic steps
+- **Class-Centric Design**: All new functions are member methods, accessing data via `self`.
+- **Minimize Parameters**: Prefer using `self.*` instance variables (already defined in `__init__`) to pass data, rather than function parameters.
+- **Purpose-Driven Naming**: Method names (e.g., `name`) should be concise, private (use a leading `_`), and describe their **specific purpose**.
+- **Reuse Existing Logic**: Do not reimplement functionality that already exists in `ModelSolver` class, Your new functions should call existing methods where appropriate.
+- **Logical Mapping**: **Each step** in the strategy decomposition should clearly map to one or more member functions.
 
 ---
 
 ## Output Format (CRITICAL):
-
-**Return ONLY a valid JSON array** parseable by `json.loads()`. No markdown, no explanations, no extra text.
-
+Return **ONLY a valid JSON object** parseable by `json.loads()`. **Do not** use Markdown, explanatory text, or any extra text.
 ### JSON Structure:
-
-```json
-[
-  {{
-    "name": "method_name",
-    "description": "What this method does, its algorithmic strategy, and its role in the overall solve workflow",
-    "inputs": [
-      {{"name": "param", "type": "Type", "description": "Parameter description (if any beyond self)"}}
-    ],
-    "outputs": [
-      {{"name": "result", "type": "Type", "description": "Return value description"}}
-    ],
-    "member_variables_read": ["self.var1", "self.var2"],
-    "member_variables_written": ["self.var3", "self.var4"],
-    "dependencies": ["other_method_name"]
-  }}
-]
+JSON
+```
+{{
+  "problem_analysis": "A brief analysis of the core sub-problems the heuristic needs to solve.",
+  "strategy_overview": "A high-level description of the chosen heuristic strategy.",
+  "function_architecture": [
+    {{
+      "name": "_step_1_function",
+      "strategic_role": "Step 1: The first logical step of the heuristic. This defines its part in the overall strategy.",
+      "description": "Specifics of *how* this method works. e.g., Calls `_helper_utility` to create `self.data_from_helper`, then processes it.",
+      "inputs": [],
+      "outputs": [],
+      "member_variables_read": [
+        {{
+          "name": "self.problem_data",
+          "type": "ProblemData",
+          "description": "The original problem instance passed into the solver."
+        }}
+      ],
+      "member_variables_written": [
+        {{
+          "name": "self._state_1",
+          "type": "StateType1",
+          "description": "Intermediate state produced by Step 1."
+        }},
+        {{
+          "name": "self.data_from_helper",
+          "type": "HelperData",
+          "description": "Data retrieved from existing helper method."
+        }}
+      ],
+      "dependencies": ["_helper_utility"]
+    }},
+    {{
+      "name": "step_2_function",
+      "strategic_role": "The second logical step, which operates independently or on the results of previous steps.",
+      "description": "Applies the next phase of the core heuristic logic.",
+      "inputs": [],
+      "outputs": [],
+      "member_variables_read": [
+        {{
+          "name": "self._state_3",
+          "type": "StateType3",
+          "description": "State from previous step."
+        }}
+      ],
+      "member_variables_written": [
+        {{
+          "name": "self._state_4",
+          "type": "StateType4",
+          "description": "New state produced by Step 2."
+        }}
+      ],
+      "dependencies": ["_step_1_function", "_helper_utility"]
+    }},
+    // ... other helper methods in order ...
+    {{
+      "name": "solve_with_heuristic",
+      "strategic_role": "Final step: Coordinates the entire heuristic workflow and formats the output.",
+      "description": "Describes the logical step this function implements, then aggregates results into the final solution dictionary.",
+      "inputs": [],
+      "outputs": [
+        {{"name": "solution", "type": "dict", "description": "Solution dictionary matching `solve_with_pyomo` format."}}
+      ],
+      "member_variables_read": [
+        {{
+          "name": "self._state_5",
+          "type": "StateType5",
+          "description": "Final state after heuristic steps."
+        }}
+      ],
+      "member_variables_written": [
+        {{
+          "name": "self.solution",
+          "type": "dict",
+          "description": "Final solution dictionary stored in solver instance."
+        }}
+      ],
+      "dependencies": ["_step_2_function"]
+    }}
+  ]
+}}
 ```
 
 ### Field Descriptions:
-
-- **name**: Method name (lowercase_with_underscores, verb-oriented)
-- **description**: Detailed explanation of the method's purpose, algorithm, and integration into the overall workflow
-- **inputs**: Parameters **beyond `self`** (only if absolutely necessary; prefer using `self.*`)
-  * Most methods should have **empty inputs** or minimal parameters
-- **outputs**: Return values (if any)
-  * Many methods may return `None` if they update `self.*` directly
-  * Return types depend on what the method computes
-- **member_variables_read**: List of `self.*` attributes this method **reads**
-  * Example format: `["self.param1", "self.param2", "self.computed_data"]`
-- **member_variables_written**: List of `self.*` attributes this method **creates or updates**
-  * Example format: `["self.result1", "self.result2", "self.state_variable"]`
-- **dependencies**: Names of other methods that must execute before this one
-
-### JSON Output Rules:
-
-1. ✓ Start with `[` and end with `]`
-2. ✓ Valid JSON syntax (proper quotes, commas, no trailing commas)
-3. ✗ NO markdown blocks (```json)
-4. ✗ NO explanatory text before/after the JSON
-5. ✗ NO comments inside JSON
-
+- **problem_analysis**: String. (Top-level) An analysis of the problem.
+- **strategy_overview**: String. (Top-level) A summary of the heuristic strategy you designed.
+- **algorithmic_decomposition**: Array of objects. (Top-level) The ordered list of all new member functions.
+    - **name**: String. Method name.
+    - **strategic_role**: String. **This is the strategic decomposition**. Describe _what_ logical step this function fulfills in the overall plan.
+    - **description**: String. Detailed explanation of _how_ the method works (its specific algorithm).
+    - **inputs**: Array of objects. Parameters **other than `self`**.
+    - **outputs**: Array of objects. Return values (empty array if none).
+    - **member_variables_read**: List of strings. CRITICAL DATAFLOW: All items MUST be strings starting with "self.". This list must only contain variables that are pre-requisites for this function to run (e.g., "self.problem_data"). Do not list variables that are created by helper methods this function calls.
+    - **member_variables_written**: List of strings. CRITICAL DATAFLOW: All items MUST be strings starting with "self.". This list must include all member variables this function creates or updates, including those created by helper methods it calls (e.g., if this function calls `_helper_utility` which creates `self.data_from_helper`, then `self.data_from_helper` must be listed here).
+    - **dependencies**: List of strings. Names of other methods that must execute before this one. This **MUST include** both **new** methods (e.g., `_step_1_function`) and **existing** methods from `ModelSolver` (e.g., `_helper_utility`) that your function calls or depends on.
 ---
 
-## Example JSON Output Format:
-
-```json
-[
-  {{
-    "name": "function_name_1",
-    "description": "Detailed description of what this function does and its algorithmic strategy",
-    "inputs": [],
-    "outputs": [{{"name": "return_value", "type": "ReturnType", "description": "Description of return value"}}],
-    "member_variables_read": ["self.variable_a", "self.variable_b"],
-    "member_variables_written": ["self.variable_c"],
-    "dependencies": []
-  }},
-  {{
-    "name": "function_name_2",
-    "description": "Detailed description of what this function does and its algorithmic strategy",
-    "inputs": [{{"name": "param1", "type": "ParamType", "description": "Parameter description"}}],
-    "outputs": [{{"name": "result", "type": "ResultType", "description": "Result description"}}],
-    "member_variables_read": ["self.variable_c", "self.variable_d"],
-    "member_variables_written": ["self.variable_e"],
-    "dependencies": ["function_name_1"]
-  }}
-]
-```
-
----
-
-## Critical Reminders:
-
-1. ✓ Functions are **class methods** (implicit `self` parameter)
-2. ✓ **Minimize inputs** - access problem data via `self.*`
-3. ✓ **Track member variables** - document what each method reads/writes
-4. ✓ **Design for composability** - methods should work together in `solve()`
-5. ✓ **Output clean JSON** - parseable by `json.loads()`, no markdown
-6. ✓ **No testing functions** - focus on algorithm logic only
-
-Now design the member function architecture and output ONLY the JSON array:
+## Key Reminders:
+1.  **Analyze First**: Your first priority is to devise the `problem_analysis` and `strategy_overview`.
+2.  **Architecture IS the Plan**: The `function_architecture` array is the _only_ list of steps. The `strategic_role` field in each function _is_ the decomposition.
+3.  **Complete Architecture**: `function_architecture` must include all **new** private helper methods _and_ the `solve_with_heuristic` method itself.
+4.  **Call Existing Methods**: Your new functions **must call** helper methods already present in `ModelSolver`. Do not redefine them. Your new functions **must** list these existing methods in their `dependencies`.
+5.  **Read the Inputs**: Carefully read `ModelSolver` class (especially `__init__` and the `solve_with_pyomo` implementation) to devise your strategy and determine the target output structure.
+6.  **Pure JSON**: Your **entire** output must be a **single, valid JSON object**, starting with `{{` and ending with `}}`. **Do not** include any Markdown or surrounding text.
+7.  **Execution Order**: The functions in `function_architecture` **must** be in logical execution order. The main `solve_with_heuristic` method must be the **last** item in the array.
 """
-
 
 HEURISTIC_TEMPLATE_GENERATION_PROMPT = """\
 
@@ -750,7 +270,7 @@ Python
   1. (To be implemented by another agent) Execute the heuristic algorithm.      
   2. (To be implemented by another agent) Call any reused helper functions for calculations.        
   3. Format the final solution into a dictionary and store it in `self.solution`.        
-- **Return Value**: Return the `self.solution` dictionary on success, or `None` on failure.    
+- **Return Value**: Return the `self.solution` dictionary.    
 - **Placeholder Implementation**:    
   - Print a "not implemented" warning message.      
   - `self.solution = None`      
@@ -821,235 +341,204 @@ Now generate the HeuristicSolver template based on the Pyomo solver above:
 """
 
 
-HEURISTIC_FUNCTION_CODE_GENERATION_PROMPT = """\
-{problem_str}
+HEURISTIC_FUNCTION_CODE_GENERATION_PROMPT = """
+# Task: Implement a Heuristic Algorithm Member Function
+You are an expert Python programmer implementing a single, modular member method for an existing solver class.
+
 ---
 
-## HeuristicSolver Template Context
+## Mission
 
-The following HeuristicSolver class template will be used for implementation:
+Your task is to write the complete, production-quality Python code for the class method `{function_name}`.
+-   You are implementing **Function {function_id} of {total_functions}**.
+-   This method is part of a larger heuristic algorithm.
+-   Your implementation **must be lean, concise, and strictly follow the specifications** provided.
+
+---
+
+## Context and Inputs
+
+### 1. Mathematical Modeling Problem
+{modeling_problem}
+
+### 2. Existing Solver Class Code
+This is the class that your new method will be added to. You are **NOT** re-writing this class, only implementing a **single new method** for it.
+
+**Use this code** to understand the class structure and identify existing `self.*` attributes (like `self.problem_data`, etc.) that are available for you to read from.
 
 ```python
-{heuristic_template_code}
+{solver_class_code}
+````
 
-Function {function_id} of {total_functions}: {function_name}
-You are implementing Function {function_id} as a class member method in a modular heuristic algorithm.
+### 3. Function Specification: `{function_name}`
+This is the detailed specification for the _only_ method you are allowed to write.
+- **Strategic Role (The "Why"):** {function_strategic_role}
+- **Algorithm Description (The "How"):** {function_description}    
+- **Dependencies (Preceding Functions):** {dependencies}
+    
 
-Function Specification
-- Function Name: {function_name}
-- Description: {function_description}
-- Dependencies: {dependencies}
-
-State and Data Flow (CRITICAL)
-This function operates within a class and communicates with other methods primarily through `self` attributes.
-
-Inputs (Parameters): {inputs_spec}
-- These are ONLY for dynamic data passed as arguments (not static problem data).
-- Your method signature MUST use exactly these parameters (in addition to `self`).
-- Do NOT add or remove parameters beyond what is specified here.
-
-Outputs (Return Value): {outputs_spec}
-- Many functions may return `None` and update `self` instead.
-- The return value of your method MUST match this specification (no extra/unmentioned returns).
-
-Member Variables Read: {member_variables_read}
-You MUST read from these `self.*` attributes to get the required state or problem data.
-
-Member Variables Written: {member_variables_written}
-You MUST write your results or state changes to these `self.*` attributes.
-
-Previously Completed Functions
+### 4. State and Data Flow (CRITICAL)
+This function operates within the class and communicates with other methods _only_ through `self` attributes and the specified parameters/return value.
+**Inputs (Parameters):**
+```
+{inputs_spec}
+```
+- This section defines the method's arguments (in addition to `self`). 
+- Your method signature **MUST** use exactly these parameters.    
+- If this section is "None", the signature is just `def {function_name}(self):`.
+    
+**Outputs (Return Value):**
+```
+{outputs_spec}
+```
+- This section defines the method's return value.    
+- If this section is "None", the method MUST not have a return statement (i.e., no return value is required).
+    
+Member Variables Read:
+{member_variables_read}
+- You **MUST** read from these `self.*` attributes to get required state or problem data.  
+- Refer to the "Existing Solver Class Code" to see how these might be structured.
+    
+Member Variables Written:
+{member_variables_written}
+- You **MUST** write your results or state changes to these `self.*` attributes.    
+- If the function's purpose is to calculate a value, it should be stored in one of these variables.
+    
+### 5. Previously Completed Functions
+This context shows which parts of the algorithm are already implemented.
 {completed_functions_summary}
 
-Implementation Requirements
-1. Core Philosophy: Concise & Focused Implementation
-- Your primary goal is to implement the core algorithm logic described in the function's description.
-- The code must be lean, concise, and efficient.
-- Avoid all verbosity:
-  - Do NOT include `print()` statements.
-  - Do NOT include visualization, logging, or placeholder (`pass`) code.
+---
 
-Minimize comments:
-- Only add brief comments for non-obvious or complex logic.
-- Do NOT add boilerplate comments that restate the code (e.g., `# Initialize variable`).
+## Implementation Requirements
+### 1. Core Philosophy: Concise & Focused Implementation
+- Your primary goal is to implement the core algorithm logic described in the **Algorithm Description**.   
+- The code must be lean, concise, and efficient.    
+- **Avoid all verbosity**:    
+    - Do **NOT** include `print()` statements.       
+    - Do **NOT** include visualization, logging, or placeholder (`pass`) code.
+        
+- **Minimize comments**:    
+    - Only add brief comments for non-obvious or complex logic.        
+    - Do **NOT** add boilerplate comments that restate the code (e.g., `# Initialize variable`).
+        
 
 ### 2. Exception Handling and Debuggability (CRITICAL)
-- **FAIL LOUDLY**: This code is part of a larger system that **requires clear error tracing** for debugging.
+- **FAIL LOUDLY**: This code is part of a larger system that **requires clear error tracing** for debugging.    
 - **DO NOT HIDE ERRORS**: Do **NOT** wrap standard operations (like dictionary lookups, list indexing, or attribute access) in general `try-except` blocks.    
 - **ALLOW RUNTIME ERRORS**: It is **ESSENTIAL** that potential `KeyError`, `IndexError`, `AttributeError`, `TypeError`, etc., are **allowed to occur**. The system _must_ crash at the exact line of the error to provide a full and accurate traceback.
 - Write **"optimistic" code** that assumes the data and state (managed by `self` and other methods) are correct. Do not write "defensive" code.
-- The _only_ time to use `try-except` is if it is a **fundamental part of the heuristic's control flow** (e.g., "try to perform a complex swap, and if it's invalid, revert"). This is rare and should **never** be used for simple data access validation.
     
 ### 3. State Management (via `self`)
-- **Read from `self`**: Access all necessary problem data (e.g., `self.some_problem_parameter`) and current algorithm state (e.g., `self.current_solution_state`) using the `self.*` attributes listed in `Member Variables Read`.    
-- **Write to `self`**: Store all persistent results or state changes (e.g., `self.best_solution_found`, `self.updated_state_variable`) using the `self.*` attributes listed in `Member Variables Written`.
+- **Read from `self`**: Access all necessary problem data (e.g., `self.problem_data`) and current algorithm state (e.g., `self.current_solution`) using the `self.*` attributes listed in `Member Variables Read`.    
+- **Write to `self`**: Store all persistent results or state changes (e.g., `self.best_solution_found`) using the `self.*` attributes listed in `Member Variables Written`.
 - **Do NOT pass static data**: Never pass static problem data (attributes initialized in `__init__`) as parameters to this method. Use `self` to access them.
     
+---
 
-### 4. Method Signature and Docstring
-- The method signature **MUST** start with `self`: `def {function_name}(self, ...):`    
-- Construct the parameter list directly from the `Inputs` specification above.    
-  - If `Inputs` is empty, the signature is exactly: `def {function_name}(self):`        
-  - If `Inputs` is non-empty, add those parameters (with type hints) after `self`.
-        
-- Include type hints for all parameters (except `self`) and for the return value.    
-- Write a **CONCISE** docstring:    
-  - A single line describing the function's purpose.    
-  - Brief `Args:` entries for parameters (only if they exist, beyond `self`).      
-  - Brief `Returns:` entry for the return value (only if the function returns something).
+## Output Format
+- You must generate **ONLY** the complete Python method code.    
+- Do **NOT** include Markdown code blocks (no ```python).   
+- Do **NOT** include any explanatory text before or after the method.    
+- Do **NOT** include import statements (they are handled globally).    
+- Do **NOT** include test code or example usage.   
 
-Output Format
-Generate ONLY the Python method code. Do not include:
-- Markdown code blocks (no ```python)
-- Explanatory text before or after the method
-- Import statements (they are handled globally)
-- Test code or example usage
-
-REQUIRED method structure (template):
-
+Your generated code **MUST** follow this exact structure:
+Python
+```
 def {function_name}(self, ...):
-    \"\"\"[Concise, one-line description of what this method does.]
+    \"\"\"[Concise, one-line description summarizing the 'Strategic Role'.]
 
     Args:
-        [Brief descriptions for parameters beyond self, derived from Inputs spec]
+        [Parameter list based *exactly* on the 'Inputs (Parameters)' spec]
 
     Returns:
-        [Brief description of the return value, derived from Outputs spec]
+        [Return value description based *exactly* on the 'Outputs (Return Value)' spec]
     \"\"\"
-    # Access problem data, e.g.: param = self.some_problem_parameter
-    # Access state data, e.g.: state_var = self.some_algorithm_state
-
     # --- Begin Core Algorithm Logic ---
-
-    # ... implementation ...
+    # Implement the {function_name} algorithm as described in
+    # 'Algorithm Description' and 'Strategic Role'.
+    
+    # ... your lean, efficient code goes here ...
 
     # --- End Core Algorithm Logic ---
 
-    # Write results to self, e.g.: self.some_new_state = ...
+    # Write results to self, e.g.: self.some_new_state = result
+    # (Must match 'Member Variables Written')
 
-    return ...
+    #return ... # (Must match 'Outputs (Return Value)' if applicable)
+```
+
 Now generate the complete, lean implementation for the class member method `{function_name}`:
 """
 
 
 HEURISTIC_CODE_INTEGRATION_PROMPT = """\
-# Role Definition:
-You are an expert code integration specialist responsible for combining modular function implementations into a cohesive solver class.
-
-# Task Objective:
-Integrate the provided heuristic function implementations into the HeuristicSolver template by filling the empty `solve()` method. The integrated code should orchestrate all functions to create a complete, working heuristic algorithm.
+# Task: Integrate Helper Functions into Solver Class
+You are an expert Python software integrator. Your mission is to combine a list of pre-written helper functions with a class template to create a single, complete, and runnable Python class.
 
 ---
 
-## HeuristicSolver Template (with empty solve() method):
+## Inputs
+### 1. Solver Class Template
+This is the "shell" class. It already contains the correct class structure, `__init__`, and an **empty** `solve_with_heuristic(self)` method that you must fill.
 
 ```python
-{template_code}
+{solver_class_code}
+````
+
+### 2. Helper Function Implementations ({function_count} functions)
+These are the pre-written, modular helper functions that contain the core algorithm logic. You must insert these into the class.
+Python
 ```
-
----
-
-## Heuristic Functions to Integrate ({function_count} functions):
-
 {functions_code}
-
----
-
-## Function Dependencies (execution order hints):
-
-{function_dependencies}
-
----
-
-## Integration Requirements:
-
-### 1. Complete the solve() Method
-- Fill the empty `solve()` method in the HeuristicSolver class
-- Orchestrate all provided functions in a logical sequence
-- Respect function dependencies (call dependent functions before those that need their outputs)
-- Return `True` on successful solving, `False` on failure
-
-### 2. Function Integration Strategy
-- **Data Flow**: Ensure outputs from one function are correctly passed as inputs to dependent functions
-- **Error Handling**: Add try-except blocks for robustness, return False on errors
-- **Solution Storage**: Store the final solution in `self.solution` dictionary
-- **Timing**: Track solve time using `self.solve_time`
-
-### 3. Solution Format
-The final `self.solution` dictionary should contain all necessary results that:
-- Match the output format expected by `get_solution()` method
-- Are compatible with the problem's evaluation framework
-- Include all decision variables and performance metrics
-
-### 4. Code Organization
-```python
-def solve(self) -> bool:
-    \"\"\"
-    Heuristic solving algorithm.
-    
-    Orchestrates all helper functions to construct and optimize a solution.
-    \"\"\"
-    start_time = time.time()
-    
-    try:
-        # Step 1: [First function call]
-        # ...
-        
-        # Step 2: [Second function call]
-        # ...
-        
-        # Step N: [Final processing]
-        # Store solution
-        self.solution = {{
-            # ... solution dictionary ...
-        }}
-        
-        self.solve_time = time.time() - start_time
-        
-        if self.verbose:
-            print(f"✓ Heuristic solving completed in {{self.solve_time:.2f}}s")
-        
-        return True
-    
-    except Exception as e:
-        if self.verbose:
-            print(f"✗ Solving failed: {{e}}")
-        self.solve_time = time.time() - start_time
-        return False
 ```
 
-### 5. Code Style
-- Clear comments explaining each step
-- Meaningful variable names
-- Proper error messages
-- Verbose output controlled by `self.verbose`
-
-### 6. Important Constraints
-- **Include all functions**: Every provided function should be used (unless it's a utility function)
-- **Preserve template structure**: Don't modify `__init__`, `get_solution()`, or other template methods
-- **Add helper functions below solve()**: Place all function implementations after the solve() method
-- **Complete code**: Output must be a fully functional, runnable Python class
+### 3. Function Dependency List
+This list dictates the **correct execution order**. You must use this to determine the sequence of calls inside `solve_with_heuristic`.
+```
+{function_dependencies}
+```
 
 ---
 
-## Output Format:
-
-Generate ONLY the complete Python class code. Do not include:
-- Markdown code blocks (no ```python```)
-- Explanatory text before or after the code
-- Separate import statements (include them at the top of the class file if needed)
-- Test code or example usage
-
-The output should be the complete HeuristicSolver class with:
-1. All imports at the top
-2. Class definition with filled `solve()` method
-3. All helper functions integrated below the class methods
-
+## Your Mission: Integration Steps
+You must perform two integration actions:
+**1. Place the Helper Functions:**
+- Copy all the function implementations from `{functions_code}` and paste them _inside_ the `ModelSolver` class body.    
+- A good location is _after_ the `solve_with_heuristic` method.
+         
 ---
 
-Now generate the complete integrated HeuristicSolver code:
+## Output Format
+- You must generate **ONLY** the complete, final Python class code.   
+- Do **NOT** include Markdown code blocks (no ```python).    
+- Do **NOT** include any explanatory text before or after the code.
+    
+The output must be a single, valid Python file content, starting from `import ...` and ending with the last line of the class.
+**Example of the `solve_with_heuristic` logic you need to write:**
+
+Python
+```
+    def solve_with_heuristic(self) -> dict:
+        \"\"\"
+        [Docstring from template]
+        \"\"\"
+
+          # Call helpers in order, based on dependencies
+          self._heuristic_step_1_select_candidates()
+          self._heuristic_step_2_assign_workers()
+          
+          # The last function often returns the final dict
+          solution_dict = self._heuristic_step_3_calculate_and_format()
+
+          # Store and return the final solution
+          self.solution = solution_dict
+          return self.solution
+
+```
+Now, generate the complete, integrated Python class code.
 """
-
 
 PROBLEM_SOLVE_CRITIQUE_PROMPT = """\
 # Mathematical Modeling Problem:

@@ -155,45 +155,39 @@ class SolverEvaluation:
             包含求解信息的字典
         """
         
-        try:
-            # 创建求解器实例
-            start_time = time.time()
-            
-            solver = self.solver_class(
-                instance=instance,
-                network=self.network,
-                K=K,
-                jobs_num=jobs_num,
-                Cs=self.Cs,
-                Ps=self.Ps,
-                topo_name=self.topo_name,
-            )            
-            
-            # 求解
-            if solver.__class__.__name__ == "PyomoSolver":
-                solution = solver.solve(
-                    solver_name=self.solver_name,
-                    time_limit=self.time_limit,
-                    mip_gap=self.mip_gap,
-                    verbose=self.verbose)
+
+        # 创建求解器实例
+        start_time = time.time()
+        
+        solver = self.solver_class(
+            instance=instance,
+            network=self.network,
+            K=K,
+            jobs_num=jobs_num,
+            Cs=self.Cs,
+            Ps=self.Ps,
+            topo_name=self.topo_name,
+        )            
+        
+        # 求解
+        if solver.__class__.__name__ == "PyomoSolver":
+            solution = solver.solve(
+                solver_name=self.solver_name,
+                time_limit=self.time_limit,
+                mip_gap=self.mip_gap,
+                verbose=self.verbose)
+        else:
+            solution = solver.solve()
+        solve_time = time.time() - start_time
+        if self.verbose:
+            print(f"✓ 求解完成: 时间 {solve_time:.2f}s")
+            if solution is not None:
+                print(f"  - Makespan: {solution['makespan']:.4f}")
             else:
-                solution = solver.solve()
-            solve_time = time.time() - start_time
-            if self.verbose:
-                print(f"✓ 求解完成: 时间 {solve_time:.2f}s")
-                if solution is not None:
-                    print(f"  - Makespan: {solution['makespan']:.4f}")
-                else:
-                    print(f"  - 无可行解")
+                print(f"  - 无可行解")
 
-            return solution
-            
-        except Exception as e:
+        return solution
 
-            import traceback
-            traceback.print_exc()
-            return None
-            
     def evaluate_configuration(
         self,
         K: int,
@@ -229,7 +223,7 @@ class SolverEvaluation:
         for K in self.ina_num_list:
             for jobs_num in self.jobs_num_list:
                 result = self.evaluate_configuration(K, jobs_num)
-                self.results[(K, jobs_num)] = result
+                self.results[str(K)+str(jobs_num)] = result
         
         return self.results      
 
@@ -302,7 +296,7 @@ def load_solver_class_from_code(code: str, class_name: str = "HeuristicSolver") 
 
 def evaluate_solver_from_file(
     solver_file_path: str,
-    class_name: str = "HeuristicSolver",
+    class_name: str = "ModuleSolver",
     topo_name: str = 'FatTree',
     ina_num_list: List[int] = [3],
     jobs_num_list: List[int] = [6],
@@ -355,7 +349,7 @@ def evaluate_solver_from_code(
     topo_name: str = 'FatTree',
     ina_num_list: List[int] = [3],
     jobs_num_list: List[int] = [6],
-    instances_num: int = 2,
+    instances_num: int = 1,
     solver_name: str = 'gurobi',
     time_limit: int = 300,
     mip_gap: float = 0.01,

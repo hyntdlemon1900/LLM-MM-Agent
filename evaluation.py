@@ -230,7 +230,7 @@ class FixedINAEvaluation:
 
         # Compute compact routing using the compact INA ID list
         method = RelaxSolve(self.ina_num, self.jobs_num, self.Cs, self.network, instance)
-        y_compact, y_d, Jct_initial, bestjct = method.test_routing(selected_ids)
+        y_compact, y_d, Jct_initial, bestjct = method.(selected_ids)
 
         # Expand y_compact into full candidate dimension aligned to ina_candidates
         jobs_num = self.jobs_num

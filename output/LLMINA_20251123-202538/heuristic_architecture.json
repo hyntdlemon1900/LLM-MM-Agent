@@ -1,0 +1,204 @@
+{
+  "problem_analysis": "The core challenge is jointly optimizing INA switch placement and worker assignments under a strict budget K, while respecting switch processing capacities, link bandwidths, and flow consistency constraints. The problem is NP-hard due to the combinatorial nature of placement and routing decisions. A key insight is that the makespan is determined by the slowest job, which depends on worker rates, aggregation bottlenecks, and network congestion. The heuristic must balance INA placement to reduce end-to-end latency without overloading switches or links, while ensuring all jobs are assigned to feasible aggregation points.",
+  "strategy_overview": "We design a greedy, iterative improvement heuristic that first identifies high-impact candidate INA placements based on network centrality and job congestion, then assigns workers to minimize the makespan through a rate-aware routing strategy. The approach alternates between refining INA placements (considering load balancing and capacity) and reassigning workers (using a bottleneck-aware assignment rule), with periodic feasibility checks. The strategy leverages existing topology and path data to avoid recomputing paths, and uses a constructive assignment phase that respects all capacity and flow constraints.",
+  "function_architecture": [
+    {
+      "name": "_initialize_placement_candidates",
+      "strategic_role": "Step 1: Rank and filter INA candidate switches based on centrality and job access patterns to prioritize high-impact placement locations.",
+      "description": "Uses the precomputed network topology and job worker distributions to compute a centrality score for each candidate switch (based on number of jobs it can reach via short paths and worker density). Filters and ranks candidates to select the top K candidates for initial placement, stored in self._placement_candidates.",
+      "inputs": [],
+      "outputs": [],
+      "member_variables_read": [
+        {
+          "name": "self.problem_data",
+          "type": "dict",
+          "description": "Contains job worker IDs, PS locations, and network structure."
+        },
+        {
+          "name": "self.ina_candidates",
+          "type": "List[int]",
+          "description": "List of all candidate switch IDs for INA deployment."
+        },
+        {
+          "name": "self.allPathDict",
+          "type": "Dict[int, Dict[int, List[int]]]",
+          "description": "Precomputed shortest paths from each node to every other node."
+        }
+      ],
+      "member_variables_written": [
+        {
+          "name": "self._placement_candidates",
+          "type": "List[Tuple[int, float]]",
+          "description": "List of (switch_id, centrality_score) pairs, sorted in descending order."
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "name": "_construct_initial_placement",
+      "strategic_role": "Step 2: Construct a feasible initial INA deployment by greedily selecting top-ranked switches under budget K.",
+      "description": "Selects the first K switches from self._placement_candidates, ensuring the placement is feasible in terms of job access. Updates self._ina_placement to store the selected switch IDs. This is a greedy initialization step that sets the foundation for routing.",
+      "inputs": [],
+      "outputs": [],
+      "member_variables_read": [
+        {
+          "name": "self._placement_candidates",
+          "type": "List[Tuple[int, float]]",
+          "description": "Ranked list of candidate switches."
+        },
+        {
+          "name": "self.problem_data",
+          "type": "dict",
+          "description": "Contains the INA budget K."
+        }
+      ],
+      "member_variables_written": [
+        {
+          "name": "self._ina_placement",
+          "type": "List[int]",
+          "description": "List of switch IDs selected for INA deployment."
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "name": "_assign_workers_to_aggregation_points",
+      "strategic_role": "Step 3: Assign each worker to an aggregation point (INA or PS) based on rate minimization and bottleneck awareness, respecting INA availability and capacity.",
+      "description": "For each job, computes the effective rate gamma_j based on worker sending rates. Assigns each worker to the aggregation point (INA switch or PS) that minimizes the job's completion time, while ensuring that INA usage only occurs on deployed switches. Uses a greedy assignment rule that prioritizes INA if it reduces the job's rate bottleneck. Updates worker assignment binaries and computes flow loads on links. Checks link and switch capacity feasibility.",
+      "inputs": [],
+      "outputs": [],
+      "member_variables_read": [
+        {
+          "name": "self._ina_placement",
+          "type": "List[int]",
+          "description": "List of selected INA switch IDs."
+        },
+        {
+          "name": "self.problem_data",
+          "type": "dict",
+          "description": "Contains job sizes, worker counts, and PS locations."
+        },
+        {
+          "name": "self.ina_candidates",
+          "type": "List[int]",
+          "description": "All possible INA candidate switches."
+        },
+        {
+          "name": "self.allPathDict",
+          "type": "Dict[int, Dict[int, List[int]]]",
+          "description": "Precomputed shortest paths."
+        }
+      ],
+      "member_variables_written": [
+        {
+          "name": "self._worker_assignments",
+          "type": "List[List[List[int]]]",
+          "description": "3D list: [job][worker] -> list of [INA_switch_ids] or [PS_id] for assignment."
+        },
+        {
+          "name": "self._job_rates",
+          "type": "List[float]",
+          "description": "Computed effective rate for each job."
+        },
+        {
+          "name": "self._link_loads",
+          "type": "Dict[Tuple[int, int], float]",
+          "description": "Total load on each link from all flows."
+        }
+      ],
+      "dependencies": [
+        "_get_path_links",
+        "_get_flows_on_link"
+      ]
+    },
+    {
+      "name": "_evaluate_and_improve_placement",
+      "strategic_role": "Step 4: Iteratively improve INA placement by replacing underperforming switches with better candidates, based on load imbalance and capacity utilization.",
+      "description": "Evaluates current INA placements by analyzing switch utilization and link congestion. For each non-deployed candidate switch, computes the potential makespan improvement if it replaces a deployed one. Replaces the least useful switch if it leads to a feasible improvement (i.e., reduces makespan without violating constraints). Repeats until no improvement is possible or max iterations reached. Updates self._ina_placement and reassigns workers accordingly.",
+      "inputs": [],
+      "outputs": [],
+      "member_variables_read": [
+        {
+          "name": "self._ina_placement",
+          "type": "List[int]",
+          "description": "Current INA switch deployment."
+        },
+        {
+          "name": "self._worker_assignments",
+          "type": "List[List[List[int]]]",
+          "description": "Current worker assignments."
+        },
+        {
+          "name": "self._link_loads",
+          "type": "Dict[Tuple[int, int], float]",
+          "description": "Current link load distribution."
+        },
+        {
+          "name": "self.problem_data",
+          "type": "dict",
+          "description": "Contains K, Cs, and network bandwidth mapping."
+        },
+        {
+          "name": "self.ina_candidates",
+          "type": "List[int]",
+          "description": "All candidate switches."
+        }
+      ],
+      "member_variables_written": [
+        {
+          "name": "self._ina_placement",
+          "type": "List[int]",
+          "description": "Updated list of selected INA switches after improvement."
+        }
+      ],
+      "dependencies": [
+        "_assign_workers_to_aggregation_points",
+        "_get_path_links",
+        "_get_flows_on_link"
+      ]
+    },
+    {
+      "name": "solve_with_heuristic",
+      "strategic_role": "Final step: Coordinate the entire heuristic workflow and format the final solution dictionary matching the Pyomo solver output.",
+      "description": "Orchestrates the full heuristic: initializes candidate ranking, constructs initial placement, assigns workers, iteratively improves placement, and finally extracts the solution. Computes makespan from the best job rate, constructs the final output dictionary with INA placement, worker assignments, job rates, and makespan. Stores the result in self.solution.",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "solution",
+          "type": "dict",
+          "description": "Final solution dictionary with keys: 'ina_placement_switches', 'worker_to_ina', 'worker_to_ps', 'job_rates', 'makespan'."
+        }
+      ],
+      "member_variables_read": [
+        {
+          "name": "self._ina_placement",
+          "type": "List[int]",
+          "description": "Final selected INA switches."
+        },
+        {
+          "name": "self._worker_assignments",
+          "type": "List[List[List[int]]]",
+          "description": "Final worker assignment decisions."
+        },
+        {
+          "name": "self._job_rates",
+          "type": "List[float]",
+          "description": "Final effective rates per job."
+        }
+      ],
+      "member_variables_written": [
+        {
+          "name": "self.solution",
+          "type": "dict",
+          "description": "Final solution dictionary stored in the solver instance."
+        }
+      ],
+      "dependencies": [
+        "_initialize_placement_candidates",
+        "_construct_initial_placement",
+        "_assign_workers_to_aggregation_points",
+        "_evaluate_and_improve_placement"
+      ]
+    }
+  ]
+}

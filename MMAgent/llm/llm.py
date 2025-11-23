@@ -25,6 +25,8 @@ class LLM:
             self.api_base = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         elif self.model_name in ['gpt-4o', 'gpt-4']:
             self.api_base = os.getenv('OPENAI_API_BASE')
+        elif self.model_name in ['gpt-4o-mini']:
+            self.api_base = os.getenv('sk-eF6sZ5sNSWzbwU8Tq2pFlq2bBjHTHiIYodIUcOTxKg8vlgvN')
         else:
             # 默认使用本地服务
             self.api_base = "http://192.168.1.44:8021/v1"

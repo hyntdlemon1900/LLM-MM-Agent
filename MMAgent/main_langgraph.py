@@ -74,7 +74,7 @@ def main():
     timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
     output_dir = Path(base_output_dir) / f"{args.task}_{timestamp}" # ./output/LLMINA_20251111-220217
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # 生成或使用提供的 thread_id
     if args.resume:
         thread_id = args.resume
@@ -101,13 +101,12 @@ def main():
         key=config.get('api_key', 'any'),
         api_base=config.get('api_base', 'http://192.168.1.44:8021/v1')
     )
+    # llm = LLM(
+    #     model_name='gpt-4o-mini',
+    #     key='sk-eF6sZ5sNSWzbwU8Tq2pFlq2bBjHTHiIYodIUcOTxKg8vlgvN',
+    #     api_base='https://api.chatanywhere.tech/v1'
+    # )
     
-    # 构建工作流
-    workflow = build_workflow(
-        enable_checkpoints=enable_checkpoints,
-        checkpoint_path=checkpoint_config.get('path'), # "./checkpoints/llmina.db" 
-    )
-
     # 创建初始状态（所有解析和构造都在内部完成）
     initial_state = create_agent_state(
         llm=llm,
@@ -115,6 +114,14 @@ def main():
         task_name=args.task,
         output_dir=str(output_dir),
     )
+
+    # 构建工作流
+    workflow = build_workflow(
+        enable_checkpoints=enable_checkpoints,
+        checkpoint_path=checkpoint_config.get('path'), # "./checkpoints/llmina.db" 
+    )
+
+
     
     start = time.time()
     

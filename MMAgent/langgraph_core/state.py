@@ -73,7 +73,8 @@ class AgentState(TypedDict, total=False):
     warnings: Annotated[List[str], merge_lists]  # 警告记录
     
     # ============ 启发式函数生成阶段 ============
-    heuristic_functions: List[Dict[str, Any]]  # 启发式函数架构列表
+    heuristic_functions: List[Dict[str, Any]]  # 启发式函数架构列表 第二部分
+    heuristic_strategy: Dict[str, Any] # 第一部分
     current_function_id: int  # 当前正在生成的函数ID
     function_codes: Annotated[Dict[int, str], merge_dicts]  # 函数ID -> 生成的代码
     
@@ -91,6 +92,11 @@ class AgentState(TypedDict, total=False):
     # ============ 评估相关 ============
     evaluation_config: Dict[str, Any]  # 评估配置（拓扑、INA预算、任务数量等）
     evaluation_results: Dict[str, Any]  # 评估结果
+    
+    # ============ 代码修复相关 ============
+    fix_attempt_count: int  # 代码修复尝试次数
+    max_fix_attempts: int  # 最大修复尝试次数
+    previous_errors: Annotated[List[str], merge_lists]  # 历史错误记录
 
 class WorkflowMetadata(TypedDict):
     """工作流元数据"""
@@ -154,6 +160,7 @@ def create_agent_state(
         problem_path=problem_path,
         problem_str="",
         output_dir=output_dir,
+        # output_dir = "./output/LLMINA_20251118-091937", # 临时硬编码，方便调试 --- IGNORE ---
         
         # 配置参数（从 task_dir 构造）
         template_dir=template_dir,
@@ -185,6 +192,7 @@ def create_agent_state(
         heuristic_template_code="",
         heuristic_template_path="",
         solver_code_path="",
+        # solver_code_path="./output/LLMINA_20251118-091937" + "/ModelSolver_final.py", # 临时硬编码，方便调试 --- IGNORE ---
         
         # 评估配置（默认值）
         evaluation_config={
@@ -197,6 +205,10 @@ def create_agent_state(
             'mip_gap': 0.01,
             'verbose': True
         },
+        # 代码修复相关
+        fix_attempt_count=0,
+        max_fix_attempts=3,
+        previous_errors=[],
         evaluation_results={}
     )
 
