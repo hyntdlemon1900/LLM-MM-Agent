@@ -6,14 +6,12 @@ Utils 模块
 from .utils import write_json_file, load_config
 from .output_manager import (
     ensure_output_dirs,
-    save_modeling_solution,
     save_task_descriptions,
-    save_dependency_info,
     save_task_code,
     save_task_result,
     save_complete_solution,
     save_workflow_log,
-    create_readme,
+    ensure_algorithm_dirs
 )
 
 __all__ = [
@@ -23,13 +21,10 @@ __all__ = [
     
     # output_manager.py
     'ensure_output_dirs',
-    'save_modeling_solution',
     'save_task_descriptions',
-    'save_dependency_info',
     'save_task_code',
     'save_task_result',
     'save_complete_solution',
-    'save_workflow_log',
-    'create_readme',
-    
+    'save_workflow_log',  
+    'ensure_algorithm_dirs'
 ]

@@ -106,6 +106,11 @@ def main():
     #     key='sk-eF6sZ5sNSWzbwU8Tq2pFlq2bBjHTHiIYodIUcOTxKg8vlgvN',
     #     api_base='https://api.chatanywhere.tech/v1'
     # )
+    # llm = LLM(
+    #     model_name='deepseek-chat',
+    #     key='sk-QgwSYarxYIP3OBxV4MMA3SbYE1MkmHmVd5MtM1SQj7EaGaQA',
+    #     api_base='https://jeniya.cn/v1/'
+    # )
     
     # 创建初始状态（所有解析和构造都在内部完成）
     initial_state = create_agent_state(
@@ -121,8 +126,6 @@ def main():
         checkpoint_path=checkpoint_config.get('path'), # "./checkpoints/llmina.db" 
     )
 
-
-    
     start = time.time()
     
     try:
@@ -130,10 +133,10 @@ def main():
         if enable_checkpoints:
             final_state = workflow.invoke(
                 initial_state,
-                config={"configurable": {"thread_id": thread_id}}
+                config={"configurable": {"thread_id": thread_id},"recursion_limit": 2000}
             )
         else:
-            final_state = workflow.invoke(initial_state)
+            final_state = workflow.invoke(initial_state,config={"recursion_limit": 2000})
         
         # 提取结果
         solver_path = final_state.get('solver_code_path', '')

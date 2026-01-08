@@ -7,8 +7,8 @@ __version__ = '1.0.0'
 __author__ = 'LLM-MM-Agent Team'
 
 # 导出核心组件
-from .problem.LLMINA.runtime import evaluate_pyomo_solver
+from .problem.LLMINA.runtime import evaluate_solver
 
 __all__ = [
-    'evaluate_pyomo_solver',
+    'evaluate_solver',
 ]

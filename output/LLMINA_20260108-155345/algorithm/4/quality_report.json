@@ -1,0 +1,92 @@
+{
+  "topology_context": {
+    "network_architecture": "3-Tier FatTree Topology (Pod-based structure)",
+    "physical_scale": "Total 20 Switches serving 20 * 8 Servers.",
+    "bandwidth_policy": "Strict Oversubscription (2:1). Traffic moving upward (to Core) faces 50 percent bandwidth reduction.",
+    "critical_rule": "Cross-Pod traffic is EXPENSIVE (congested). Intra-Pod traffic is CHEAP (fast)."
+  },
+  "evaluation_scenarios": [
+    {
+      "scenario_narrative": {
+        "workload_description": "5 Concurrent DML Jobs (Moderate Load)",
+        "acceleration_resource_budget": "Allowed to deploy INA on 5 switches (approx 25.0% of all switches).",
+        "hardware_capability": {
+          "switch_processing_power": "750.0 Gbps (Standard Programmable Switch)",
+          "server_uplink_capacity": "200.0 Gbps (High-Performance NIC for PS)"
+        },
+        "job_spatial_distribution": [
+          "Job 0: Localized (Ideal). All workers inside Pod 3.",
+          "Job 1: Fragmented (Challenging). Spread across 2 Pods. Needs Core bandwidth.",
+          "Job 2: Localized (Ideal). All workers inside Pod 0.",
+          "Job 3: Fragmented (Challenging). Spread across 2 Pods. Needs Core bandwidth.",
+          "Job 4: Fragmented (Challenging). Spread across 2 Pods. Needs Core bandwidth."
+        ]
+      },
+      "performance_outcome": {
+        "iteration_makespan": "34.90 seconds",
+        "contrast_algorithm_makespan": "15.88 seconds",
+        "diagnosis": "Poor - Optimization Needed"
+      },
+      "critical_issues_found": [
+        {
+          "location": "Unknown Link",
+          "specific_link": "ToR(167) --> Aggr(174)",
+          "severity": "CRITICAL SATURATION (100 percent Full)",
+          "root_cause_hint": ""
+        }
+      ],
+      "resource_utilization_report": [
+        {
+          "switch": "ToR(160)",
+          "status": "Active",
+          "utilization": "7.2%"
+        },
+        {
+          "switch": "ToR(164)",
+          "status": "OVERLOADED",
+          "observation": "Switch processing capacity exceeded. Algorithm assigned too many workers to this single aggregator."
+        },
+        {
+          "switch": "ToR(167)",
+          "status": "Active",
+          "utilization": "78.1%"
+        },
+        {
+          "switch": "Aggr(168)",
+          "status": "Active",
+          "utilization": "11.2%"
+        },
+        {
+          "switch": "Aggr(169)",
+          "status": "WASTED BUDGET",
+          "observation": "INA feature enabled (costing budget) but processing ZERO traffic. Algorithm chose a poor location."
+        },
+        {
+          "ps_node": "Server(6)",
+          "status": "IDLE",
+          "observation": "PS has almost no traffic."
+        },
+        {
+          "ps_node": "Server(49)",
+          "status": "IDLE",
+          "observation": "PS has almost no traffic."
+        },
+        {
+          "ps_node": "Server(148)",
+          "status": "IDLE",
+          "observation": "PS has almost no traffic."
+        },
+        {
+          "ps_node": "Server(91)",
+          "status": "IDLE",
+          "observation": "PS has almost no traffic."
+        },
+        {
+          "ps_node": "Server(95)",
+          "status": "IDLE",
+          "observation": "PS has almost no traffic."
+        }
+      ]
+    }
+  ]
+}

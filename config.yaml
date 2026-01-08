@@ -6,20 +6,11 @@ task: "LLMINA"
 api_key: "any"  # 可通过环境变量 LLM_API_KEY 覆盖
 api_base: "http://192.168.1.44:8021/v1"  # LLM API base URL
 
-# Workflow configuration
-max_loops: 10  # 最大循环次数
-max_retries: 2  # 任务求解最大重试次数
-
 # Clarification configuration
 clarification_enabled: True  # 是否启用问题澄清
 clarification_max_rounds: 3  # 澄清最大轮次
 clarification_interactive: False  # 澄清是否交互式
 
-# Algorithm design configuration
-algorithm_design_max_rounds: 2  # 算法设计迭代轮次
-
-# Modeling configuration
-modeling_max_rounds: 2  # 建模最大轮次
 max_validation_attempts: 2  # 最大验证尝试次数
 
 # Checkpoint configuration

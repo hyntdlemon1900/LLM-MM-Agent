@@ -134,7 +134,7 @@ class CheckpointManager:
             'state_keys': list(channel_values.keys()),
             'output_dir': channel_values.get('output_dir'),
             'current_function_id': channel_values.get('current_function_id'),
-            'function_count': len(channel_values.get('heuristic_functions', [])),
+            'function_count': len(channel_values.get('function_architecture', [])),
             'messages_count': len(channel_values.get('messages', [])),
             'errors_count': len(channel_values.get('errors', [])),
             'solver_code_path': channel_values.get('solver_code_path'),

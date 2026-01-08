@@ -1,0 +1,97 @@
+{
+  "topology_context": {
+    "network_architecture": "3-Tier FatTree Topology (Pod-based structure)",
+    "physical_scale": "Total 20 Switches serving 20 * 8 Servers.",
+    "bandwidth_policy": "Strict Oversubscription (2:1). Traffic moving upward (to Core) faces 50 percent bandwidth reduction.",
+    "critical_rule": "Cross-Pod traffic is EXPENSIVE (congested). Intra-Pod traffic is CHEAP (fast)."
+  },
+  "evaluation_scenarios": [
+    {
+      "scenario_narrative": {
+        "workload_description": "5 Concurrent DML Jobs (Moderate Load)",
+        "acceleration_resource_budget": "Allowed to deploy INA on 5 switches (approx 25.0% of all switches).",
+        "hardware_capability": {
+          "switch_processing_power": "750.0 Gbps (Standard Programmable Switch)",
+          "server_uplink_capacity": "200.0 Gbps (High-Performance NIC for PS)"
+        },
+        "job_spatial_distribution": [
+          "Job 0: Localized (Ideal). All workers inside Pod 3.",
+          "Job 1: Fragmented (Challenging). Spread across 2 Pods. Needs Core bandwidth.",
+          "Job 2: Localized (Ideal). All workers inside Pod 0.",
+          "Job 3: Fragmented (Challenging). Spread across 2 Pods. Needs Core bandwidth.",
+          "Job 4: Fragmented (Challenging). Spread across 2 Pods. Needs Core bandwidth."
+        ]
+      },
+      "performance_outcome": {
+        "iteration_makespan": "126.35 seconds",
+        "contrast_algorithm_makespan": "15.88 seconds",
+        "diagnosis": "Poor - Optimization Needed"
+      },
+      "critical_issues_found": [
+        {
+          "location": "PS Access Bottleneck (Last Mile Congestion)",
+          "specific_link": "ToR(164) --> Server(95)",
+          "severity": "CRITICAL SATURATION (100 percent Full)",
+          "root_cause_hint": "Too many workers sending raw gradients directly to this PS. INA was not used effectively to reduce traffic volume."
+        }
+      ],
+      "resource_utilization_report": [
+        {
+          "switch": "ToR(164)",
+          "status": "Active",
+          "utilization": "2.3%"
+        },
+        {
+          "switch": "Aggr(170)",
+          "status": "Active",
+          "utilization": "1.9%"
+        },
+        {
+          "switch": "Aggr(172)",
+          "status": "Active",
+          "utilization": "1.2%"
+        },
+        {
+          "switch": "Aggr(173)",
+          "status": "WASTED BUDGET",
+          "observation": "INA feature enabled (costing budget) but processing ZERO traffic. Algorithm chose a poor location."
+        },
+        {
+          "switch": "Aggr(174)",
+          "status": "Active",
+          "utilization": "2.1%"
+        },
+        {
+          "ps_node": "Server(6)",
+          "status": "Active",
+          "utilization": "7.1%",
+          "details": "[Job 2: 17 workers]"
+        },
+        {
+          "ps_node": "Server(49)",
+          "status": "Active",
+          "utilization": "2.9%",
+          "details": "[Job 1: 19 workers]"
+        },
+        {
+          "ps_node": "Server(148)",
+          "status": "Active",
+          "utilization": "25.7%",
+          "details": "[Job 0: 23 workers]"
+        },
+        {
+          "ps_node": "Server(91)",
+          "status": "Active",
+          "utilization": "35.0%",
+          "details": "[Job 4: 14 workers]"
+        },
+        {
+          "ps_node": "Server(95)",
+          "status": "Active",
+          "utilization": "88.6%",
+          "details": "[Job 3: 31 workers]"
+        }
+      ]
+    }
+  ]
+}

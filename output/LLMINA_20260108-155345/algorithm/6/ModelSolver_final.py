@@ -1,0 +1,548 @@
+from __future__ import annotations
+from typing import List, Dict, Tuple, Any, Optional
+import copy
+import networkx as nx
+from MMBench.problem.problem_template.runtime.TemplateSolver import TemplateSolver
+
+class ModelSolver(TemplateSolver):
+    """
+    MILP Solver for the LLMINA (In-Network Aggregation) Problem.
+    
+    This class prepares the data context for the optimization model. 
+    It explicitly unpacks the complex 'instance' and 'network' objects into 
+    flat member variables to ensure the downstream LLM understands the physical 
+    topology and logical job requirements.
+    """
+
+    def __init__(
+        self,
+        instance: Dict[str, Any],
+        network: Any,
+        ina_budget: int,
+        jobs_num: int,
+        Cs: float = 750.0,
+        Ps: float = 200.0,
+        topo_name: str = "FatTree",
+    ):
+        """
+        Initializes the solver.
+        
+        Args:
+            instance (dict): A dictionary containing Distributed ML Job specifications.
+            network (object): A complex object representing the Datacenter Network Topology.
+            ina_budget(int): Resource Budget - Max number of switches allowed to enable INA.
+            jobs_num (int): Number of concurrent training jobs.
+            Cs (float): Switching Capacity (throughput limit) for INA processing.
+            Ps (float): Physical bandwidth limit of the Parameter Server's NIC (last hop).
+            topo_name (str): Name of the topology (e.g., "FatTree").
+        """
+        # Store raw inputs
+        problem_data = {
+            "instance": instance,
+            "network": network,
+            "ina_budget": ina_budget,
+            "jobs_num": jobs_num,
+            "Cs": Cs,
+            "Ps": Ps,
+            "topo_name": topo_name,
+        }
+        super().__init__(problem_data)
+        
+        self.solution: Optional[Dict[str, Any]] = None
+        
+        # Trigger explicit data unpacking
+        self._preprocess_data()
+
+    def _preprocess_data(self) -> None:
+        """
+        DATA PREPROCESSING & SCHEMA DEFINITION
+        
+        This method unpacks the 'instance' dictionary and 'network' object into explicit 
+        class member variables. It also documents the physical structure of the network 
+        to ensure the optimization model respects the underlying topology.
+        """
+        
+        # =========================================================================
+        # [Context] Network Topology & Physical Constraints (Fat-Tree)
+        # =========================================================================
+        # The cluster uses a standard 3-tier Fat-Tree topology organized into "Pods".
+        # Understanding the bandwidth hierarchy and physical limits is CRITICAL.
+        #
+        # 1. Physical Hierarchy (Three Layers):
+        #    - Edge Layer (ToR Switches): The bottom layer. This is the ONLY layer
+        #      where endpoints connect. **BOTH Workers and Parameter Servers (PS)
+        #      are physically attached to these switches.**
+        #    - Aggregation Layer (Aggr Switches): Middle layer. Connects multiple
+        #      ToR switches to form a "Pod".
+        #    - Core Layer (Core Switches): Top layer. Interconnects different Pods.
+        #
+        # 2. Critical Bandwidth Bottleneck (2:1 Oversubscription):
+        #    The network is designed with a specific "Oversubscription Ratio" to
+        #    reflect realistic Data Center constraints:
+        #    - Tapering Rule: At both Edge and Aggregation layers, the total bandwidth
+        #      of Downlink ports (facing servers) is approximately TWICE the total
+        #      bandwidth of Uplink ports (facing the core).
+        #    - Consequence: This creates a **2:1 Bottleneck** for any traffic moving
+        #      upwards. Traffic leaving a Pod (Cross-Pod) fights for half the
+        #      bandwidth available to traffic staying inside a Pod (Intra-Pod).
+        #
+        # 3. Server Access Links (The "Last Mile"):
+        #    - Worker Connection: Workers connect to ToR switches with standard
+        #      baseline bandwidth.
+        #    - PS Connection: Parameter Servers also connect to ToR switches, but
+        #      are provisioned with **DOUBLE (2x) the bandwidth** of a standard
+        #      worker link.
+        #    - Bottleneck Warning: Despite the 2x capacity, the PS link is a strict
+        #      "Many-to-One" bottleneck (Incast) because all workers of a job send
+        #      data to this single link simultaneously.
+        # =========================================================================
+
+        # Load raw source objects
+        raw_instance = self.problem_data["instance"]
+        raw_network = self.problem_data["network"]
+
+        # -------------------------------------------------------------------------
+        # 1. Global Scalar Constraints
+        # -------------------------------------------------------------------------
+        self.ina_budget: int = self.problem_data["ina_budget"]                # INA Deployment Budget
+        self.jobs_num: int = self.problem_data["jobs_num"]  # Total concurrent jobs
+        self.Cs: float = float(self.problem_data["Cs"])     # Switch Processing Cap (Gbps)
+        self.Ps: float = float(self.problem_data["Ps"])     # PS Link Bandwidth (Gbps)
+        self.topo_name: str = self.problem_data["topo_name"]
+
+        # -------------------------------------------------------------------------
+        # 2. Job Specifications (Unpacking 'instance' Dictionary)
+        # -------------------------------------------------------------------------
+        # [Data Structure] instance["workers_id"]: List[List[int]]
+        # [Meaning] A nested list where index j corresponds to Job j.
+        #           The inner list contains the Node IDs of all workers for that job.
+        # [Example] [[101, 102], [201, 202, 203]] -> Job 0 has workers 101, 102.
+        self.workers_id: List[List[int]] = raw_instance["workers_id"]
+
+        # [Data Structure] instance["ps_id"]: List[int]
+        # [Meaning] A list where index j is the Node ID of the Parameter Server for Job j.
+        # [Physical Loc] These nodes are servers attached to ToR switches.
+        self.ps_id: List[int] = raw_instance["ps_id"]
+
+        # [Data Structure] instance["jobs_size"]: List[float]
+        # [Meaning] The gradient data volume (in Gigabits) Job j generates per iteration.
+        self.jobs_size: List[float] = raw_instance["jobs_size"]
+
+        # [Data Structure] instance["workers_num"]: List[int]
+        # [Meaning] The count of workers belonging to Job j.
+        self.workers_num: List[int] = raw_instance["workers_num"]
+
+        # -------------------------------------------------------------------------
+        # 3. Network Topology Details (Unpacking 'network' Object)
+        # -------------------------------------------------------------------------
+        # [Graph Object] network.G (networkx.Graph)
+        # Represents the physical wiring. Nodes are Switches or Servers.
+        self.G: nx.Graph = copy.deepcopy(raw_network.G)
+
+        # [Path Data] network.allPathDict: Dict[int, Dict[int, List[int]]]
+        # [Meaning] Pre-computed shortest paths. 
+        #           Query: self.allPathDict[src_id][dst_id] -> List of Node IDs.
+        #           Used to determine which links a flow traverses.
+        self.allPathDict: Dict[int, Dict[int, List[int]]] = copy.deepcopy(raw_network.allPathDict)
+
+        # [Bandwidth Map] network.bandwidth_mapping: Dict[Tuple[int, int], float]
+        # [Meaning] Capacity of directed physical links.
+        #           Key: (u, v), Value: Capacity in Gbps.
+        self.bandwidth_mapping: Dict[Tuple[int, int], float] = (
+            copy.deepcopy(raw_network.bandwidth_mapping) 
+            if hasattr(raw_network, "bandwidth_mapping") else {}
+        )
+
+        # [Switch Classification]
+        # The 'network' object exposes lists of switch IDs based on their tier.
+        # These are crucial for determining valid INA placement candidates.
+        self.tors_id: List[int] = list(getattr(raw_network, "tors_id", []))     # Edge Layer
+        self.aggrs_id: List[int] = list(getattr(raw_network, "aggrs_id", []))   # Aggregation Layer
+        self.cores_id: List[int] = list(getattr(raw_network, "cores_id", []))   # Core Layer
+        self.all_switches_id: List[int] = list(getattr(raw_network, "all_switches_id", []))
+
+        # -------------------------------------------------------------------------
+        # 4. Derived Variables (Calculated for Optimization Context)
+        # -------------------------------------------------------------------------
+        
+        # [Variable] self.ina_candidates: List[int]
+        # [Logic] Based on the topology, select which switches are programmable.
+        #         For Fat-Tree, usually ToR, Aggr, and Core are all candidates.
+        self.ina_candidates: List[int] = self._compute_ina_candidates()
+        self.ina_candidates_num: int = len(self.ina_candidates)
+
+        # [Variable] self.sd_id: List[int]
+        # [Meaning] The "Gateway Switch" for each Job's PS.
+        #           self.sd_id[j] is the Switch Node ID directly connected to ps_id[j].
+        # [Physical Constraint] Since this is a Fat-Tree, self.sd_id[j] IS ALWAYS A ToR SWITCH.
+        #           This link (sd_id[j] <-> ps_id[j]) is the specific "PS Bottleneck".
+        self.sd_id: List[int] = []
+        for j in range(self.jobs_num):
+            ps_node = self.ps_id[j]
+            neighbors = list(self.G.neighbors(ps_node))
+            if not neighbors:
+                raise ValueError(f"PS node {ps_node} is isolated!")
+            self.sd_id.append(neighbors[0]) # The unique ToR switch for this PS
+
+        # -------------------------------------------------------------------------
+        # 5. Final Capacity Adjustments
+        # -------------------------------------------------------------------------
+        # Enforce the 'Ps' parameter on the last-hop link.
+        # The link between the PS and its ToR switch often has limited bandwidth (NIC limit).
+        for j in range(self.jobs_num):
+            s_node = self.sd_id[j]
+            p_node = self.ps_id[j]
+            self.bandwidth_mapping[(s_node, p_node)] = self.Ps
+            self.bandwidth_mapping[(p_node, s_node)] = self.Ps
+
+    # =============================================================================
+    # Helper Methods
+    # =============================================================================
+
+    def _compute_ina_candidates(self) -> List[int]:
+        """
+        Returns a sorted list of unique switch IDs eligible for INA placement.
+        """
+        candidates = []
+        if self.topo_name == "FatTree":
+            # In FatTree, logical aggregation can happen at any switch layer
+            candidates = self.tors_id + self.aggrs_id + self.cores_id
+        elif self.topo_name == "SpineLeaf":
+            candidates = self.tors_id + self.spines_id
+        else:
+            candidates = self.all_switches_id
+        return sorted(list(set(candidates)))
+
+    def _get_path_links(self, src: int, dst: int) -> List[Tuple[int, int]]:
+        """
+        Returns the list of directed edges [(u,v), (v,w)...] representing the 
+        shortest path from src to dst using self.allPathDict.
+        """
+        if src not in self.allPathDict or dst not in self.allPathDict[src]:
+            return []
+        path = self.allPathDict[src][dst]
+        return [(path[i], path[i+1]) for i in range(len(path) - 1)]
+
+    def _get_flows_on_link(
+        self,
+        edge: Tuple[int, int],
+        src_set: List[int],
+        dst_set: List[int]
+    ) -> List[Tuple[int, int]]:
+        """
+        Identifies which flows (src_idx -> dst_idx) traverse the given edge.
+        Used to construct Link Bandwidth Constraints.
+        
+        Returns:
+            List of (src_index, dst_index) tuples.
+        """
+        flows = []
+        edge_rev = (edge[1], edge[0])
+        
+        for s_idx, s_node in enumerate(src_set):
+            for d_idx, d_node in enumerate(dst_set):
+                path_edges = self._get_path_links(s_node, d_node)
+                # Check if the edge (or its reverse) is part of the flow's path
+                if edge in path_edges or edge_rev in path_edges:
+                    flows.append((s_idx, d_idx))
+        return flows
+
+    """
+    def solve_with_heuristic(self) -> Optional[Dict[str, Any]]:
+        '''
+        to be implemented below: solve the MILP model with heuristic methods
+        '''         
+        self.solution = {
+            # List of integer Node IDs of selected switches. 
+            # E.g., [101, 102, 205]
+            "ina_placement_switches": [], 
+            
+            # Nested Dictionary: Mapping [job_index][worker_index] -> Aggregation Node ID
+            # Key 1: Job index 'j' (int, 0 to jobs_num-1)
+            # Key 2: Worker index 'w' (int, 0 to workers_num[j]-1)
+            # Value: Node ID (int) of the chosen switch OR the PS node.
+            "worker_agg_id": {} 
+        }
+        return self.solution
+    """
+
+    def get_makespan(self, ina_placement_switches, worker_agg_id) -> Optional[float]:
+        """
+        Calculates the theoretically optimal makespan given a fixed INA deployment and routing configuration.
+
+        Methodology:
+            With the discrete decisions (INA placement `x` and worker assignments `y`) fixed, the original Mixed-Integer 
+            problem reduces to a continuous Linear Programming (LP) problem (specifically, a convex resource allocation problem).
+            
+            This function calculates the optimal gradient transmission rates by solving this continuous sub-problem, 
+            often utilizing a "Water-Filling" algorithm or standard LP solver. It identifies the limiting bottleneck 
+            (whether it be Link Bandwidth or Switch Processing Capacity) to determine the maximum feasible global 
+            pacing rate `alpha`, where the Makespan t = 1/alpha.
+
+        Args:
+            ina_placement_switches (List[int]): The specific set of switches enabled with In-Network Aggregation.
+            worker_agg_id (Dict[int, Dict[int, int]]): The routing map defining where each worker sends its gradients 
+                                                       (Mapping: [job_idx][worker_idx] -> Aggregation Node ID).
+
+        Returns:
+            Optional[float]: The minimum achievable makespan (time to complete one iteration) under these settings. 
+                             Returns None if the configuration is infeasible.
+        """
+        return super().get_makespan(ina_placement_switches, worker_agg_id)
+
+    # ============ Heuristic Functions ============
+
+    # Function 1: _decide_ina_placement_candidates
+    # Role: Selects the most strategically impactful switches for INA deployment by evaluating their potential to alleviate aggregation bottlenecks across multiple jobs, based on topological centrality and job connectivity.
+    def _decide_ina_placement_candidates(self):
+        # Ensure candidate switches are computed
+        self._compute_ina_candidates()
+
+        # Initialize scoring dictionary
+        candidate_scores = {}
+
+        # For each candidate switch, compute a composite score
+        for s in self.ina_candidates:
+            score = 0.0
+
+            # Track total job size for jobs with workers connected via cross-Pod paths
+            cross_pod_job_volume = 0.0
+
+            # Track whether switch is in the same Pod as any PS
+            same_pod_as_ps = False
+
+            # Track total traffic volume expected to flow through this switch
+            expected_traffic = 0.0
+
+            # Analyze each job
+            for j in range(self.jobs_num):
+                job_workers = self.workers_id[j]
+                job_size = self.jobs_size[j]
+                ps_tor = self.sd_id[j]  # ToR directly connected to PS
+
+                # Check if any worker of this job is connected through a path that goes through core layer
+                has_cross_pod_path = False
+
+                for w in job_workers:
+                    # Get shortest path from worker to PS
+                    path = self.allPathDict[w][self.ps_id[j]]
+                    if not path:
+                        continue
+
+                    # Check if path traverses a core switch (indicates cross-Pod)
+                    # In a Fat-Tree, core switches are in a separate layer; any path that goes from ToR to Aggr to Core is cross-Pod
+                    path_edges = [(path[i], path[i+1]) for i in range(len(path) - 1)]
+
+                    # Check if any edge in the path connects an Aggr to a Core
+                    for u, v in path_edges:
+                        if u in self.aggrs_id and v in self.cores_id:
+                            has_cross_pod_path = True
+                            break
+                    if has_cross_pod_path:
+                        break
+
+                # If job has cross-Pod traffic, penalize the switch if it's not helping to reduce it
+                if has_cross_pod_path:
+                    # If the switch is in the same Pod as the PS, it can aggregate locally and reduce cross-Pod load
+                    if s in self.tors_id or s in self.aggrs_id:
+                        # Check if s is in the same Pod as ps_tor
+                        # In a Fat-Tree, ToRs are in Pods; Aggrs connect multiple ToRs
+                        # We assume ps_tor is in Pod X; if s is in same Pod, it's a good candidate
+                        # For simplicity, assume s is in same Pod as ps_tor if s is a ToR in the same Pod
+                        # Since ps_tor is a ToR, only other ToRs in same Pod are in same Pod
+                        # We use a simplified mapping: Pod ID = ToR // 10 or based on network structure
+                        # For now, use a heuristic: if s == ps_tor, it's in same Pod
+                        if s == ps_tor:
+                            # Strong bonus: INA at PS's ToR can aggregate locally, reducing core traffic
+                            score += 10.0 * job_size
+                        else:
+                            # Moderate bonus: Aggr switch in same Pod can help
+                            if s in self.aggrs_id:
+                                score += 5.0 * job_size
+                            # Otherwise, weak or negative
+
+                # Also, check if this switch is on the shortest path from any worker to PS
+                for w in job_workers:
+                    path = self.allPathDict[w][self.ps_id[j]]
+                    path_edges = [(path[i], path[i+1]) for i in range(len(path) - 1)]
+                    if s in path:
+                        expected_traffic += job_size
+
+            # Add traffic load as a proxy for potential processing load
+            score += 0.01 * expected_traffic  # Slight bonus for high-traffic switches
+
+            # Penalize switches that are already heavily used (if we had utilization data, but we don't, so skip)
+            # Instead, promote diversity: penalize multiple switches from same Pod
+
+            # Assign to candidate_scores
+            candidate_scores[s] = score
+
+        # Sort candidates by score in descending order
+        sorted_candidates = sorted(candidate_scores.keys(), key=lambda s: candidate_scores[s], reverse=True)
+
+        # Apply budget constraint and enforce diversity
+        selected = []
+        selected_pods = set()
+
+        # Map switch to Pod (simplified: ToR and Aggr in Pod X = switch_id // 10)
+        def get_pod(s):
+            if s in self.tors_id:
+                return s // 10
+            elif s in self.aggrs_id:
+                return s // 10
+            elif s in self.cores_id:
+                return s // 100  # Cores are fewer, use larger divisor
+            return -1
+
+        for s in sorted_candidates:
+            pod = get_pod(s)
+            if len(selected) >= self.ina_budget:
+                break
+            if pod not in selected_pods:
+                selected.append(s)
+                selected_pods.add(pod)
+            else:
+                # If we already selected a switch in this Pod, skip unless we're below budget
+                # But if we have room, we can still add even if same Pod, but prefer diversity
+                # So only add if we haven't hit budget
+                if len(selected) < self.ina_budget:
+                    # Allow same Pod only after diversity is exhausted
+                    selected.append(s)
+
+        # Finalize the ranked list
+        self._ina_placement_priority = selected
+
+    # Function 2: _assign_workers_to_aggregators
+    # Role: Assigns each worker to a single aggregation point—either an INA-enabled switch or the PS—while respecting assignment validity and minimizing end-to-end congestion by prioritizing low-latency and high-capacity paths.
+    def _assign_workers_to_aggregators(self):
+        """
+        Assigns each worker to a single aggregation point (INA-enabled switch or PS) using a composite cost function that balances path efficiency, topological load, PS proximity, and switch capacity.
+
+        The algorithm:
+        - Prioritizes INA placement on switches co-located with the PS, especially for high-volume jobs.
+        - Penalizes cross-Pod traffic and avoids overloading switches.
+        - Uses dynamic cost scoring based on path, topology, and load.
+        - Ensures valid assignments only to enabled INA switches.
+        """
+        # Initialize the output mapping
+        self._worker_assignment_map = {}
+
+        # Access the precomputed INA placement priority list
+        ina_placement_priority = self._ina_placement_priority
+
+        # Precompute per-job PS ToR switch
+        # (Already available via self.sd_id, but ensure we use it properly)
+
+        # For tracking switch processing load (aggregate incoming traffic rate)
+        switch_load = {s: 0.0 for s in ina_placement_priority}
+
+        # Iterate over each job
+        for j in range(self.jobs_num):
+            self._worker_assignment_map[j] = {}
+
+            # Get the PS's ToR switch for job j
+            ps_tor_switch = self.sd_id[j]
+
+            # Get the number of workers in this job
+            num_workers = self.workers_num[j]
+
+            # Get list of worker IDs for this job
+            job_workers = self.workers_id[j]
+
+            # Determine if this job has high volume (threshold: >15 workers)
+            is_high_volume_job = num_workers > 15
+
+            # List of valid candidate aggregation nodes: INA switches in priority order, plus PS
+            candidates = []
+            for s in ina_placement_priority:
+                # Only include switches that are eligible and not yet overloaded
+                # (We'll check load below, but include in list for now)
+                candidates.append(s)
+            # Always include the PS as a fallback
+            candidates.append(self.ps_id[j])
+
+            # For each worker in the job
+            for w_idx in range(num_workers):
+                worker_id = job_workers[w_idx]
+                best_cost = float('inf')
+                best_assignment = None
+
+                # For each candidate aggregation point
+                for candidate in candidates:
+                    cost = 0.0
+
+                    # Determine if candidate is an INA switch or PS
+                    is_ina_switch = (candidate in ina_placement_priority)
+
+                    # Skip if candidate is an INA switch but not enabled (though by construction, ina_placement_priority should be enabled)
+                    if is_ina_switch and candidate not in ina_placement_priority:
+                        continue
+
+                    # Path cost: hop count from worker to candidate
+                    path = self._get_path_links(worker_id, candidate)
+                    hop_count = len(path)
+                    cost += hop_count
+
+                    # Cross-Pod penalty: if path goes through core layer, penalize
+                    # Count how many times path traverses core-to-aggr or aggr-to-core links
+                    core_hops = 0
+                    for u, v in path:
+                        if u in self.cores_id and v in self.aggrs_id:
+                            core_hops += 1
+                        elif u in self.aggrs_id and v in self.cores_id:
+                            core_hops += 1
+                    cost += core_hops * 5.0  # Weighted penalty
+
+                    # PS Proximity Bonus: if INA switch is on the same ToR as PS, reduce cost
+                    if is_ina_switch and candidate in self.tors_id and candidate == ps_tor_switch:
+                        cost -= 10.0  # Strong bonus for same-ToR placement
+
+                    # Load-aware routing: penalize switches already under high load
+                    # Only apply if switch is an INA switch
+                    if is_ina_switch:
+                        # Use current load (can be updated incrementally)
+                        current_load = switch_load[candidate]
+                        # Penalize based on load (avoid saturation)
+                        # Use a quadratic penalty to discourage overloading
+                        if current_load > 0.1 * self.Cs:  # Threshold: 10% of capacity
+                            cost += (current_load / self.Cs) ** 2 * 100.0
+
+                    # If this is a high-volume job, strongly prefer same-ToR INA switches
+                    if is_high_volume_job and is_ina_switch and candidate == ps_tor_switch:
+                        cost -= 5.0  # Extra bonus for high-volume jobs
+
+                    # If candidate is PS, we still allow it, but only if no INA switch is available
+                    # But we don't penalize PS if it's the only option
+
+                    # Update best assignment if cost is lower
+                    if cost < best_cost:
+                        best_cost = cost
+                        best_assignment = candidate
+
+                # Assign worker to best candidate
+                self._worker_assignment_map[j][w_idx] = best_assignment
+
+                # If assignment is to an INA switch, increment its load
+                if best_assignment in ina_placement_priority:
+                    switch_load[best_assignment] += self.jobs_size[j] / self.jobs_num  # Approximate load
+
+
+    # Function 3: solve_with_heuristic
+    # Role: Orchestrates the complete solution pipeline by executing the placement and assignment steps in sequence, then constructs and returns the final solution object matching the required schema.
+    def solve_with_heuristic(self) -> Optional[Dict[str, Any]]:
+        """
+        Orchestrates the complete solution pipeline by executing the placement and assignment steps in sequence, then constructs and returns the final solution object matching the required schema.
+        """
+        # Step 1: Decide optimal INA placement candidates based on strategic priority
+        self._decide_ina_placement_candidates()
+
+        # Step 2: Assign workers to aggregation points using the selected INA switches
+        self._assign_workers_to_aggregators()
+
+        # Step 3: Construct the final solution object
+        self.solution = {
+            "ina_placement_switches": self._ina_placement_priority[:self.ina_budget],
+            "worker_agg_id": self._worker_assignment_map
+        }
+
+        return self.solution

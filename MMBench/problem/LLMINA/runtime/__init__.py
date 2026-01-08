@@ -8,7 +8,7 @@ __author__ = 'LLM-MM-Agent Team'
 
 # 导出核心组件
 from .topo import *
-from .ModelSolve import *
+from .BaseSolve import *
 from .ModelSolver import *
-from .evaluate_pyomo_solver import *
+from .evaluate_solver import *
 from .dataset import *

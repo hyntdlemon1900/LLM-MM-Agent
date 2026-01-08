@@ -1,0 +1,130 @@
+{
+  "problem_analysis": "The core challenge lies in jointly optimizing INA switch placement and worker-to-aggregator assignment under strict hardware and network constraints. Key data structures include job-specific worker and PS mappings, switch tier classifications, precomputed shortest paths, and per-link bandwidth capacities. The solution must balance INA deployment budget, switch processing limits, and link bandwidth saturation while ensuring valid routing assignments. The critical insight is that placement and assignment are interdependent: poor placement creates hotspots, while poor assignment wastes INA capacity.",
+  "strategy_overview": "The solution follows a constructive, single-pass pipeline: first, prioritize candidate switches for INA based on topological influence and job proximity; second, assign workers to aggregation points using a greedy, bottleneck-aware strategy; finally, assemble the solution using the precomputed components. The approach leverages existing data preprocessing and path-finding utilities to avoid redundant computation.",
+  "function_architecture": [
+    {
+      "name": "_decide_ina_placement_candidates",
+      "strategic_role": "Selects the most strategically impactful switches for INA deployment by evaluating their potential to alleviate aggregation bottlenecks across multiple jobs, based on topological centrality and job connectivity.",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "ina_placement_candidates",
+          "type": "List[int]",
+          "description": "A ranked list of switch Node IDs eligible for INA, prioritized by systemic impact."
+        }
+      ],
+      "member_variables_read": [
+        {
+          "name": "self.ina_candidates",
+          "type": "List[int]",
+          "description": "All switches eligible for INA placement."
+        },
+        {
+          "name": "self.workers_id",
+          "type": "List[List[int]]",
+          "description": "Worker assignments per job."
+        },
+        {
+          "name": "self.ps_id",
+          "type": "List[int]",
+          "description": "PS node assignments per job."
+        },
+        {
+          "name": "self.allPathDict",
+          "type": "Dict[int, Dict[int, List[int]]]",
+          "description": "Precomputed shortest paths between all node pairs."
+        }
+      ],
+      "member_variables_written": [
+        {
+          "name": "self._ina_placement_priority",
+          "type": "List[int]",
+          "description": "Final ordered list of switches selected for INA, respecting the budget constraint."
+        }
+      ],
+      "dependencies": [
+        "_compute_ina_candidates",
+        "_get_path_links"
+      ]
+    },
+    {
+      "name": "_assign_workers_to_aggregators",
+      "strategic_role": "Assigns each worker to a single aggregation point—either an INA-enabled switch or the PS—while respecting assignment validity and minimizing end-to-end congestion by prioritizing low-latency and high-capacity paths.",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "worker_agg_id",
+          "type": "Dict[int, Dict[int, int]]",
+          "description": "Mapping from job and worker index to chosen aggregation node ID."
+        }
+      ],
+      "member_variables_read": [
+        {
+          "name": "self._ina_placement_priority",
+          "type": "List[int]",
+          "description": "Ranked list of switches selected for INA deployment."
+        },
+        {
+          "name": "self.workers_id",
+          "type": "List[List[int]]",
+          "description": "Worker assignments per job."
+        },
+        {
+          "name": "self.ps_id",
+          "type": "List[int]",
+          "description": "PS node assignments per job."
+        },
+        {
+          "name": "self.allPathDict",
+          "type": "Dict[int, Dict[int, List[int]]]",
+          "description": "Precomputed shortest paths between all node pairs."
+        }
+      ],
+      "member_variables_written": [
+        {
+          "name": "self._worker_assignment_map",
+          "type": "Dict[int, Dict[int, int]]",
+          "description": "Final assignment of workers to aggregation points."
+        }
+      ],
+      "dependencies": [
+        "_get_path_links"
+      ]
+    },
+    {
+      "name": "solve_with_heuristic",
+      "strategic_role": "Orchestrates the complete solution pipeline by executing the placement and assignment steps in sequence, then constructs and returns the final solution object matching the required schema.",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "solution",
+          "type": "Any",
+          "description": "Final solution object containing INA placement and worker assignments."
+        }
+      ],
+      "member_variables_read": [
+        {
+          "name": "self._ina_placement_priority",
+          "type": "List[int]",
+          "description": "Selected switches for INA deployment."
+        },
+        {
+          "name": "self._worker_assignment_map",
+          "type": "Dict[int, Dict[int, int]]",
+          "description": "Worker-to-aggregator assignment map."
+        }
+      ],
+      "member_variables_written": [
+        {
+          "name": "self.solution",
+          "type": "Dict[str, Any]",
+          "description": "Final solution stored in the instance for retrieval."
+        }
+      ],
+      "dependencies": [
+        "_decide_ina_placement_candidates",
+        "_assign_workers_to_aggregators"
+      ]
+    }
+  ]
+}
