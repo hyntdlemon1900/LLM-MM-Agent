@@ -223,6 +223,58 @@ class ModelSolver(TemplateSolver):
         path = self.allPathDict[src][dst]
         return [(path[i], path[i+1]) for i in range(len(path) - 1)]
 
+    def _get_node_pod(self, node_id: int) -> int:
+        """
+        Utility function to determine the Pod ID of a given node (Worker, PS, ToR, Aggr).
+        
+        Logic for FatTree (Based on topo.py):
+        - ToRs are generated sequentially: Pod 0, Pod 1, ...
+        - Aggrs are generated sequentially: Pod 0, Pod 1, ...
+        - k = FatTree arity.
+        - ToRs per Pod = k/2.
+        - Aggrs per Pod = k/2.
+        
+        Args:
+            node_id (int): The node ID.
+            
+        Returns:
+            int: The Pod ID (0-indexed). Returns -1 if not applicable or not found.
+        """
+        if self.topo_name != "FatTree":
+            return 0  # SpineLeaf is considered single region/pod
+            
+        # 1. Infer k_half (number of switches per pod in edge/aggr layer)
+        # From topo.py: EdgeSwitch_Count (num_tors) = (k^2) / 2
+        # We need k_half = k / 2.
+        # Math: num_tors = 2 * (k/2)^2 = 2 * k_half^2
+        # Therefore: k_half = sqrt(num_tors / 2)
+        try:
+            num_tors = len(self.tors_id)
+            k_half = int((num_tors / 2) ** 0.5)
+            if k_half == 0: return 0
+        except Exception:
+            return 0
+
+        # 2. Check ToR
+        if node_id in self.tors_id:
+            idx = self.tors_id.index(node_id)
+            return idx // k_half
+            
+        # 3. Check Aggr
+        if node_id in self.aggrs_id:
+            idx = self.aggrs_id.index(node_id)
+            return idx // k_half
+            
+        # 4. Check Worker/PS (Server)
+        # Logic: Find the connecting ToR and ask for its Pod
+        neighbors = list(self.G.neighbors(node_id))
+        for n in neighbors:
+            if n in self.tors_id:
+                idx = self.tors_id.index(n)
+                return idx // k_half
+                
+        return -1
+
     def _get_flows_on_link(
         self,
         edge: Tuple[int, int],

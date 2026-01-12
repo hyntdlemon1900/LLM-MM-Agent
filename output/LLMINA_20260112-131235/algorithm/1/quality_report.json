@@ -1,0 +1,414 @@
+{
+  "topology_context": {
+    "network_architecture": "3-Tier FatTree Topology (Pod-based structure)",
+    "physical_scale": "Total 20 Switches serving 20 * 8 Servers.",
+    "bandwidth_policy": "Strict Oversubscription (2:1). Traffic moving upward (to Core) faces 50 percent bandwidth reduction.",
+    "critical_rule": "Cross-Pod traffic is EXPENSIVE (congested). Intra-Pod traffic is CHEAP (fast)."
+  },
+  "evaluation_scenarios": [
+    {
+      "scenario_narrative": {
+        "workload_description": "5 Concurrent DML Jobs (Moderate Load)",
+        "acceleration_resource_budget": "Allowed to deploy INA on 5 switches (approx 25.0% of all switches).",
+        "job_spatial_distribution": [
+          "Job 0 (Size: 722MB): Spread across 2 Pods [2, 3].",
+          "Job 1 (Size: 409MB): All workers inside Pod 1.",
+          "Job 2 (Size: 632MB): Spread across 2 Pods [1, 2].",
+          "Job 3 (Size: 39MB): Spread across 2 Pods [0, 1].",
+          "Job 4 (Size: 106MB): All workers inside Pod 0."
+        ]
+      },
+      "performance_outcome": {
+        "iteration_makespan": "46.27 seconds",
+        "contrast_algorithm_makespan": "16.13 seconds",
+        "diagnosis": "Poor - Optimization Needed"
+      },
+      "critical_issues_found": [
+        {
+          "location": "Core Layer Bottleneck (Cross-Pod Congestion)",
+          "specific_link": "Aggr(171) --> Core(179)",
+          "severity": "CRITICAL SATURATION (100 percent Full)"
+        },
+        {
+          "location": "Core Layer Bottleneck (Cross-Pod Congestion)",
+          "specific_link": "Core(178) --> Aggr(172)",
+          "severity": "CRITICAL SATURATION (100 percent Full)"
+        }
+      ],
+      "resource_utilization_report": [
+        {
+          "switch": "ToR(162)",
+          "status": "Active",
+          "utilization": "57.9%"
+        },
+        {
+          "switch": "ToR(164)",
+          "status": "Active",
+          "utilization": "36.7%"
+        },
+        {
+          "switch": "Aggr(171)",
+          "status": "Active",
+          "utilization": "16.5%"
+        },
+        {
+          "switch": "Aggr(172)",
+          "status": "Active",
+          "utilization": "5.7%"
+        },
+        {
+          "switch": "Core(176)",
+          "status": "Active",
+          "utilization": "21.0%"
+        },
+        {
+          "ps_node": "Server(6)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(77)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(49)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(91)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(95)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        }
+      ]
+    },
+    {
+      "scenario_narrative": {
+        "workload_description": "5 Concurrent DML Jobs (Moderate Load)",
+        "acceleration_resource_budget": "Allowed to deploy INA on 5 switches (approx 25.0% of all switches).",
+        "job_spatial_distribution": [
+          "Job 0 (Size: 971MB): All workers inside Pod 2.",
+          "Job 1 (Size: 576MB): Spread across 2 Pods [2, 3].",
+          "Job 2 (Size: 550MB): Spread across 2 Pods [0, 1].",
+          "Job 3 (Size: 792MB): Spread across 2 Pods [1, 2].",
+          "Job 4 (Size: 753MB): All workers inside Pod 0."
+        ]
+      },
+      "performance_outcome": {
+        "iteration_makespan": "94.88 seconds",
+        "contrast_algorithm_makespan": "25.38 seconds",
+        "diagnosis": "Poor - Optimization Needed"
+      },
+      "critical_issues_found": [
+        {
+          "location": "Core Layer Bottleneck (Cross-Pod Congestion)",
+          "specific_link": "Core(178) --> Aggr(172)",
+          "severity": "CRITICAL SATURATION (100 percent Full)"
+        }
+      ],
+      "resource_utilization_report": [
+        {
+          "switch": "ToR(160)",
+          "status": "Active",
+          "utilization": "58.1%"
+        },
+        {
+          "switch": "ToR(163)",
+          "status": "Active",
+          "utilization": "32.2%"
+        },
+        {
+          "switch": "ToR(166)",
+          "status": "Active",
+          "utilization": "11.3%"
+        },
+        {
+          "switch": "Aggr(170)",
+          "status": "Active",
+          "utilization": "1.9%"
+        },
+        {
+          "switch": "Aggr(172)",
+          "status": "Active",
+          "utilization": "24.2%"
+        },
+        {
+          "ps_node": "Server(100)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(134)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(13)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(16)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(60)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        }
+      ]
+    },
+    {
+      "scenario_narrative": {
+        "workload_description": "5 Concurrent DML Jobs (Moderate Load)",
+        "acceleration_resource_budget": "Allowed to deploy INA on 5 switches (approx 25.0% of all switches).",
+        "job_spatial_distribution": [
+          "Job 0 (Size: 529MB): Spread across 2 Pods [2, 3].",
+          "Job 1 (Size: 770MB): All workers inside Pod 0.",
+          "Job 2 (Size: 611MB): All workers inside Pod 3.",
+          "Job 3 (Size: 927MB): Spread across 2 Pods [0, 1].",
+          "Job 4 (Size: 320MB): All workers inside Pod 3."
+        ]
+      },
+      "performance_outcome": {
+        "iteration_makespan": "49.96 seconds",
+        "contrast_algorithm_makespan": "27.51 seconds",
+        "diagnosis": "Poor - Optimization Needed"
+      },
+      "critical_issues_found": [
+        {
+          "location": "Unknown Link",
+          "specific_link": "Server(52) --> ToR(162)",
+          "severity": "CRITICAL SATURATION (100 percent Full)"
+        },
+        {
+          "location": "Unknown Link",
+          "specific_link": "Server(47) --> ToR(162)",
+          "severity": "CRITICAL SATURATION (100 percent Full)"
+        }
+      ],
+      "resource_utilization_report": [
+        {
+          "switch": "ToR(160)",
+          "status": "OVERLOADED",
+          "observation": "Switch processing capacity exceeded. Algorithm assigned too many workers to this single aggregator."
+        },
+        {
+          "switch": "ToR(162)",
+          "status": "Active",
+          "utilization": "75.1%"
+        },
+        {
+          "switch": "ToR(165)",
+          "status": "Active",
+          "utilization": "26.8%"
+        },
+        {
+          "switch": "ToR(167)",
+          "status": "Active",
+          "utilization": "33.0%"
+        },
+        {
+          "switch": "Aggr(168)",
+          "status": "Active",
+          "utilization": "5.9%"
+        },
+        {
+          "ps_node": "Server(7)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(141)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(111)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(49)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(125)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        }
+      ]
+    },
+    {
+      "scenario_narrative": {
+        "workload_description": "5 Concurrent DML Jobs (Moderate Load)",
+        "acceleration_resource_budget": "Allowed to deploy INA on 5 switches (approx 25.0% of all switches).",
+        "job_spatial_distribution": [
+          "Job 0 (Size: 543MB): Spread across 2 Pods [2, 3].",
+          "Job 1 (Size: 120MB): All workers inside Pod 2.",
+          "Job 2 (Size: 389MB): All workers inside Pod 3.",
+          "Job 3 (Size: 98MB): Spread across 2 Pods [0, 1].",
+          "Job 4 (Size: 689MB): Spread across 2 Pods [1, 2]."
+        ]
+      },
+      "performance_outcome": {
+        "iteration_makespan": "80.49 seconds",
+        "contrast_algorithm_makespan": "11.95 seconds",
+        "diagnosis": "Poor - Optimization Needed"
+      },
+      "critical_issues_found": [
+        {
+          "location": "Core Layer Bottleneck (Cross-Pod Congestion)",
+          "specific_link": "Aggr(171) --> Core(179)",
+          "severity": "CRITICAL SATURATION (100 percent Full)"
+        }
+      ],
+      "resource_utilization_report": [
+        {
+          "switch": "ToR(162)",
+          "status": "Active",
+          "utilization": "36.0%"
+        },
+        {
+          "switch": "ToR(164)",
+          "status": "Active",
+          "utilization": "10.0%"
+        },
+        {
+          "switch": "ToR(165)",
+          "status": "Active",
+          "utilization": "16.7%"
+        },
+        {
+          "switch": "Aggr(172)",
+          "status": "Active",
+          "utilization": "1.2%"
+        },
+        {
+          "switch": "Core(179)",
+          "status": "Active",
+          "utilization": "3.7%"
+        },
+        {
+          "ps_node": "Server(109)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(83)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(153)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(58)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(94)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        }
+      ]
+    },
+    {
+      "scenario_narrative": {
+        "workload_description": "5 Concurrent DML Jobs (Moderate Load)",
+        "acceleration_resource_budget": "Allowed to deploy INA on 5 switches (approx 25.0% of all switches).",
+        "job_spatial_distribution": [
+          "Job 0 (Size: 562MB): Spread across 2 Pods [1, 2].",
+          "Job 1 (Size: 524MB): All workers inside Pod 0.",
+          "Job 2 (Size: 985MB): All workers inside Pod 3.",
+          "Job 3 (Size: 22MB): Spread across 2 Pods [0, 1].",
+          "Job 4 (Size: 536MB): Spread across 2 Pods [2, 3]."
+        ]
+      },
+      "performance_outcome": {
+        "iteration_makespan": "59.16 seconds",
+        "contrast_algorithm_makespan": "19.70 seconds",
+        "diagnosis": "Poor - Optimization Needed"
+      },
+      "critical_issues_found": [
+        {
+          "location": "Unknown Link",
+          "specific_link": "Server(159) --> ToR(167)",
+          "severity": "CRITICAL SATURATION (100 percent Full)"
+        },
+        {
+          "location": "Core Layer Bottleneck (Cross-Pod Congestion)",
+          "specific_link": "Aggr(170) --> Core(177)",
+          "severity": "CRITICAL SATURATION (100 percent Full)"
+        }
+      ],
+      "resource_utilization_report": [
+        {
+          "switch": "ToR(161)",
+          "status": "Active",
+          "utilization": "39.8%"
+        },
+        {
+          "switch": "ToR(163)",
+          "status": "Active",
+          "utilization": "29.2%"
+        },
+        {
+          "switch": "ToR(165)",
+          "status": "Active",
+          "utilization": "23.8%"
+        },
+        {
+          "switch": "ToR(167)",
+          "status": "Active",
+          "utilization": "56.7%"
+        },
+        {
+          "switch": "Aggr(170)",
+          "status": "Active",
+          "utilization": "16.4%"
+        },
+        {
+          "ps_node": "Server(64)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(2)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(144)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(116)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(25)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        }
+      ]
+    }
+  ],
+  "hardware_capability": {
+    "switch_processing_power": "750.0 Gbps (Standard Programmable Switch)",
+    "server_uplink_capacity": "200.0 Gbps (High-Performance NIC for PS)"
+  }
+}

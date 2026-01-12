@@ -9,196 +9,6 @@ Problem Formulation:
 {problem_formulation}
 """
 
-# PROBLEM_DESCRIPTION_PROMPT = """\
-# Problem Background:
-# {problem_background}
-
-# Problem Requirement:
-# {problem_requirement}
-# """
-
-# HEURISTIC_ARCHITECT_PROMPT = """
-# ````
-# # Task: Define High-Level Modular Architecture for Heuristic Solution
-# You are a top-tier algorithm architect. Your task is to design a new **heuristic solution method**, `solve_with_heuristic()`, for an **existing** Solver Class.
-
-# Your workflow must follow "Problem-Driven Design":
-# 1.  **Analyze & Strategize**: Analyze the problem and define a high-level `problem_analysis` and `strategy_overview`.
-# 2.  **Design Algorithm (Decomposition)**: Design a **concise, high-level algorithm** (`algorithmic_decomposition`). This should consist of **major, logical steps**, not a fine-grained list. Focus on the *algorithmic logic* for each step.
-# 3.  **Map to Architecture**: *After* designing the algorithm, define the `function_architecture` (the list of member functions) that will implement those algorithmic steps.
-# The `solve_with_heuristic()` method itself will act as the "main" method to coordinate the calls to these helper functions that implement the strategic steps.
-# ---
-
-# ## Inputs:
-# ### 1. Mathematical Modeling Problem
-# {problem_str}
-# ### 2. Existing Solver Class Code
-# ```python
-# {heuristic_reference_code}
-# ```
-# ### 3. Target Method and Output
-# **Target Method Signature:**
-# Python
-# ```
-# def solve_with_heuristic(self) -> dict:
-#     \"\"\"
-#     Solves the problem using a heuristic algorithm.
-    
-#     Returns:
-#         A dictionary strictly matching the schema defined in `solve_with_pyomo`.
-#         Keys: "ina_placement_switches" (List[int]) and "worker_agg_id" (Dict[int, Dict[int, int]]).
-#     \"\"\"
-#     pass 
-# ```
-
-# ---
-# ## Your Mission:
-# Design a **high-level plan** as a single JSON object. This plan MUST focus on the **algorithm design first**.
-# ### Design Philosophy:
-# - **Conciseness is Key**: Your primary goal is to design a **high-level algorithm**, not a minutely detailed functional breakdown.    
-# - **Focus on Major Steps**: The `algorithmic_decomposition` should consist of a **small number** of significant, meaningful algorithmic steps. Avoid splitting simple operations into their own steps.    
-# - **Separation + Simplicity**:
-#   - Each helper function should implement one clear strategic step and be as self-contained as possible.
-#   - Avoid mixing unrelated logic in one function, but also do not over-split into tiny utilities.
-#   - A single major algorithm step should generally map to a single function.
-# - Model-driven, non-metaheuristic design: Do not propose population-based or black-box metaheuristics (e.g., genetic algorithms, simulated annealing, tabu search, ant colony optimization, particle swarm optimization, generic evolutionary search, or RL-based global search over candidate solutions). Avoid generic neighborhood-based local search, hill-climbing, “local improvement” phases, or “repeat until no improvement” patterns over candidate solutions. Instead, design a single-pass, problem-specific constructive procedure that explicitly computes and sets the problem's decision variables (e.g., placement, assignment, routing, scheduling decisions) via deterministic, rule-based logic derived from the mathematical model and available data, without any outer refinement loop over complete solutions.
-# ---
-
-# ## CRITICAL REQUIREMENT: REUSE EXISTING METHODS
-# Your primary task is to **extend, not reinvent**.
-# 1.  **Analyze `ModelSolver` class:** Identify all existing methods (e.g., `_helper_utility`). These are your 'reusable tools'.
-# 2.  **Assume a 'Clean' State:** Your `solve_with_heuristic()` method is responsible for its *entire* workflow. It **cannot** assume that other methods (like an existing `_helper_utility` or `_build_model` from `solve_with_pyomo`) have already been run. If your new function needs the functionality provided by an existing method, it **must explicitly call `self._helper_utility`** (or whatever its real name is). Do not reimplement this logic.
-# 3.  **Update Dependencies:** When a new function (e.g., `_step_1_function`) *calls* an existing method (e.g., `_helper_utility`), it **MUST** list that existing method in its `dependencies` array.
-
-# ## ! IMPORTANT: DO NOT COPY EXAMPLE NAMES
-# The method names used in this prompt's examples (like `_helper_utility`) are for **illustration only**. They are generic placeholders.
-# **DO NOT** output the literal string `"_helper_utility"` in your JSON unless, by some coincidence, a method with that *exact* name actually exists in the `ModelSolver` class input.
-# Your task is to **find the *actual*, *real* helper methods** in the provided code (e.g., `_calculate_initial_routes`, `_get_problem_parameters`, etc. -- whatever they are *actually* named) and list *those real names* in the `dependencies` array.
-
-# ## Design Principles:
-# - **Class-Centric Design**: All new functions are member methods, accessing data via `self`.
-# - **Minimize Parameters**: Prefer using `self.*` instance variables (already defined in `__init__`) to pass data, rather than function parameters.
-# - **Purpose-Driven Naming**: Method names (e.g., `name`) should be concise, private (use a leading `_`), and describe their **specific purpose**.
-# - **Reuse Existing Logic**: Do not reimplement functionality that already exists in `ModelSolver` class, Your new functions should call existing methods where appropriate.
-# - **Logical Mapping**: **Each step** in the strategy decomposition should clearly map to one or more member functions.
-
-# ---
-
-# ## Output Format (CRITICAL):
-# Return **ONLY a valid JSON object** parseable by `json.loads()`. **Do not** use Markdown, explanatory text, or any extra text.
-# ### JSON Structure:
-# JSON
-# ```
-# {{
-#   "problem_analysis": "A brief analysis of the core sub-problems. Identify which specific Python data structures (e.g., self.allPathDict, jobs_size) will be critical for decision making.",
-#   "strategy_overview": "A high-level description of the chosen heuristic strategy.",
-#   "function_architecture": [
-#     {{
-#       "name": "_step_1_function",
-#       "strategic_role": "WHAT: States WHAT this step achieves but NOT how.",
-#       "description": "HOW: the algorithmic logic, helper calls, and exact decision rules.",
-#       "inputs": [],
-#       "outputs": [],
-#       "member_variables_read": [
-#         {{
-#           "name": "self.problem_data",
-#           "type": "ProblemData",
-#           "description": "The original problem instance passed into the solver."
-#         }}
-#       ],
-#       "member_variables_written": [
-#         {{
-#           "name": "self._state_1",
-#           "type": "StateType1",
-#           "description": "Intermediate state produced by Step 1."
-#         }},
-#         {{
-#           "name": "self.data_from_helper",
-#           "type": "HelperData",
-#           "description": "Data retrieved from existing helper method."
-#         }}
-#       ],
-#       "dependencies": ["_helper_utility"]
-#     }},
-#     {{
-#       "name": "step_2_function",
-#       "strategic_role": "WHAT: The second logical step that advances solver state.",
-#       "description": "HOW: Applies the next phase of the core heuristic logic.",
-#       "inputs": [],
-#       "outputs": [],
-#       "member_variables_read": [
-#         {{
-#           "name": "self._state_3",
-#           "type": "StateType3",
-#           "description": "State from previous step."
-#         }}
-#       ],
-#       "member_variables_written": [
-#         {{
-#           "name": "self._state_4",
-#           "type": "StateType4",
-#           "description": "New state produced by Step 2."
-#         }}
-#       ],
-#       "dependencies": ["_step_1_function", "_helper_utility"]
-#     }},
-#     // ... other helper methods in order ...
-#     {{
-#       "name": "solve_with_heuristic",
-#       "strategic_role": "WHAT: Orchestrates all steps and emits the final solution object that satisfies the solver’s schema.",
-#       "description": "HOW: Invokes steps in order, validates invariants, resolves conflicts, and assembles the final dictionary.",
-#       "inputs": [],
-#       "outputs": [
-#         {{"name": "solution", "type": "dict", "description": "Solution dictionary matching `solve_with_pyomo` format."}}
-#       ],
-#       "member_variables_read": [
-#         {{
-#           "name": "self._state_5",
-#           "type": "StateType5",
-#           "description": "Final state after heuristic steps."
-#         }}
-#       ],
-#       "member_variables_written": [
-#         {{
-#           "name": "self.solution",
-#           "type": "dict",
-#           "description": "Final solution dictionary stored in solver instance."
-#         }}
-#       ],
-#       "dependencies": ["_step_2_function"]
-#     }}
-#   ]
-# }}
-# ```
-
-# ### Field Descriptions:
-# - **problem_analysis**: String. (Top-level) An analysis of the problem.
-# - **strategy_overview**: String. (Top-level) A summary of the heuristic strategy you designed.
-# - **function_architecture**: Array of objects. (Top-level) The ordered list of all new member functions.
-#     - **name**: String. Method name.
-#     - **strategic_role**: String. Defines the functional objective (WHAT) of this step—what artifact or state change the step is responsible for (e.g., “Determines the execution order of jobs”, “Allocates bandwidth to links”). Do not describe the underlying logic, techniques, scoring, or procedures.
-#     - **description**: String. The concrete algorithmic logic (HOW). Specify the decision mechanics: which data factors are considered (e.g., size, cost, capacity), how data is traversed/sorted/scored, thresholds or tie-breaking rules, helper calls (with names), and validation steps.
-#     - **inputs**: Array of objects. Parameters **other than `self`**.
-#     - **outputs**: Array of objects. Return values (empty array if none).
-#     - **member_variables_read**: Array of objects. Each object must include name (starting with self.), type, and description. Only list variables required before this function runs.
-#     - **member_variables_written**: Array of objects. Each object must include name (starting with self.), type, and description. Must include all states updated/created here, including those created by existing helpers it calls.
-#     - **dependencies**: List of strings. Names of other methods that must execute before this one. This **MUST include** both **new** methods (e.g., `_step_1_function`) and **existing** methods from `ModelSolver` (e.g., `_helper_utility`) that your function calls or depends on.
-# ---
-
-# ## Key Reminders:
-# 1.  **Analyze First**: Your first priority is to devise the `problem_analysis` and `strategy_overview`.
-# 2.  **Architecture IS the Plan**: The `function_architecture` array is the _only_ list of steps. The `strategic_role` field in each function _is_ the decomposition.
-# 3.  **Complete Architecture**: `function_architecture` must include all **new** private helper methods _and_ the `solve_with_heuristic` method itself.
-# 4.  **Call Existing Methods**: Your new functions **must call** helper methods already present in `ModelSolver`. Do not redefine them. Your new functions **must** list these existing methods in their `dependencies`.
-# 5.  **Implicit Dependencies**: If a function accesses variables like `self.allPathDict` or `self.ina_candidates`, it implies a dependency on `_preprocess_data`. Ensure `solve_with_heuristic` or the first step triggers necessary preprocessing.
-# 5.  **Read the Inputs**: Carefully read `ModelSolver` class (especially `__init__` and the `solve_with_pyomo` implementation) to devise your strategy and determine the target output structure.
-# 6.  **Pure JSON**: Your **entire** output must be a **single, valid JSON object**, starting with `{{` and ending with `}}`. **Do not** include any Markdown or surrounding text.
-# 7.  **Execution Order**: The functions in `function_architecture` **must** be in logical execution order. The main `solve_with_heuristic` method must be the **last** item in the array.
-# 8.  **Single-pass, constructive, rule-based heuristic**: Implement the heuristic as a single-pass, acyclic, feed-forward decision pipeline that directly sets or updates the model's decision variables based on problem data and derived priorities. Do not introduce generic neighborhood search, hill-climbing, tabu-style moves, or “local improvement” / “refinement” loops that repeatedly modify an existing complete solution based on measured improvement. Iteration over items is allowed only as data traversal inside this single pass, not as iterative re-optimization over alternative complete solutions.
-# """
-
-# Task: Design High-Level Heuristic Strategy and Modular Architecture
-
 HEURISTIC_ARCHITECT_PROMPT = '''
 You are a top-tier **System Architect**. Your task is to design the **architectural skeleton** and **strategic workflow** for a new heuristic method, `solve_with_heuristic()`, extending an **existing** Solver Class.
 **Crucial Constraint**: You are strictly an **Architect**, not a Coder. You must define _what_ the modules do and how they interact, but **DO NOT** design the specific algorithmic implementation details (e.g., do not specify sorting keys, specific formulas, or loop structures).
@@ -483,12 +293,15 @@ JSON
 
 HEURISTIC_FUNCTION_CODE_GENERATION_PROMPT = """
 # Task: Design & Implement a Heuristic Algorithm Member Function
-You are an expert Python Algorithm Developer. You are working within a predefined architecture to implement a specific member method for a Solver Class.
+You are an expert **Algorithm Designer & Python Developer**. You are working within a predefined architecture to implement a specific member method for a Solver Class.
 
 ---
 
 ## Mission
-Your goal is to **design the implementation logic** and **write the code** for the function `{function_name}`.
+Your goal is two-fold:
+1.  **Algorithmic Design Phase**: You must bridge the gap between the high-level "Strategic Role" (What to do) and the concrete implementation (How to do it). You need to devise the specific logic (e.g., scoring formulas, filtering criteria, data structures) that best achieves the strategic goal.
+2.  **Implementation Phase**: Write the robust, production-quality Python code for `{function_name}`.
+
 **You are implementing Function {function_id} of {total_functions} in the pipeline.**
 
 ---
@@ -749,11 +562,18 @@ You are strictly limited to modifying **only** the high-level heuristic function
 ### Step 2: Formulate Critical Experience Lessons (Crucial)
 
 Synthesize your diagnosis into actionable "**Experience Lessons**" to guide the next generation of code.
-These lessons should serve as a knowledge base for future iterations, capturing **what worked**, **what failed**, and **how to improve**.
+**Objective:** Create a **Causal Narrative** that explains how specific algorithmic choices led to specific outcomes.
 
-- **Observation & Root Cause:** Describe the observed phenomenon (from metrics) and link it to the specific logic in the code that caused it.
-- **Strategic Insight:** Abstract the problem to a principle (e.g., "Greedy assignment locally optimizes X but starves Y globally").
-- **Actionable Directive:** Give clear, constructive instructions for the code generator (e.g., "Retain the sorting logic for tasks, but change the resource allocation criteria to favor X over Y", or "Avoid hard constraints on Z; use a dynamic threshold instead").
+Your output will be injected into future prompts as "Historical Insight". It must read naturally, like an engineer explaining a post-mortem.
+Structure the lessons to reveal the **Mechanism of Failure**:
+
+1. **State the Strategy:** Explicitly mention the heuristic logic used (e.g., "Sorting by duration," "Assigning to the first valid slot").
+2. **State the Outcome:** Connect it to the failure metric (e.g., "caused fragmentation," "overloaded the bottleneck").
+
+**Recommended Pattern:**
+"The previous logic of [STRATEGY] failed to handle [SCENARIO], leading to [NEGATIVE OUTCOME]."
+
+Avoid generic statements. Be specific about the *logic* (Sorting, Grouping, Filtering, Thresholds).
 
 These lessons will be appended to the state to guide future code generation.
 
@@ -769,8 +589,8 @@ Return **ONLY a valid JSON object**.
 JSON
 ```
 {{
-  "experience_lessons": "**Observation:** [Phenomenon]... **Insight:** [Logic Gap]... **Directive:** [Specific instruction for next code generation]...",
-  "function_update": ["_step_1_function","_step_2_function", ...
+  "experience_lessons": "The previous logic of sorting tasks by start time caused resource gaps (Utilization < 50%) because it failed to account for task duration.",
+  "function_update": ["_step_1_function","_step_4_function", ...
   ]
 }}
 ```

@@ -642,7 +642,7 @@ def heuristic_evaluation_node(state: AgentState) -> AgentState:
     solver_code_path = state.get('solver_code_path', '')
     runtime_dir = state.get('runtime_dir', '')
 
-    # solver_code_path = '/home/hyn/LLM-MM-Agent-LLMINA-clean/output/LLMINA_20260108-092809/algorithm/1/ModelSolver_final.py'
+    # solver_code_path = '/home/hyn/LLM-MM-Agent-LLMINA-clean/output/LLMINA_20260108-155345/algorithm/3/ModelSolver_final.py'
 
 
     # 临时添加 runtime_dir 到 sys.path 以确保依赖模块可以被导入
@@ -954,7 +954,7 @@ def constraint_analyzer_node(state: AgentState) -> AgentState:
     current_step = state.get('current_step', 1)
     print("[Constraint Analysis] Running multi-instance MILP analysis...")
 
-    # solver_code_path = '/home/hyn/LLM-MM-Agent-LLMINA-clean/output/LLMINA_20260107-190332/algorithm/1/ModelSolver_final.py'
+    # solver_code_path = '/home/hyn/LLM-MM-Agent-LLMINA-clean/output/LLMINA_20260108-155345/algorithm/1/ModelSolver_final.py'
 
     try:
         # 1. 环境准备：临时添加 runtime_dir 到 sys.path

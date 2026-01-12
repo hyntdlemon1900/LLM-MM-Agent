@@ -83,19 +83,24 @@ class SolutionAnalyzer:
         # ===== 定义参数扫描空间 =====
         ina_num_list = [5]
         jobs_num_list = [5]
-        Cs_list = [750.0]
+        # Cs_list = [750.0]
+        Cs = 750.0
         Ps = 200.0
-        instance_num = 1
+        instance_num = 5
 
         # 结果容器
         report = {
             "topology_context": self._generate_topology_narrative(), # 注入世界观
-            "evaluation_scenarios": []
+            "evaluation_scenarios": [],
+            "hardware_capability": {
+                "switch_processing_power": f"{Cs} Gbps (Standard Programmable Switch)",
+                "server_uplink_capacity": f"{Ps} Gbps (High-Performance NIC for PS)"
+            },
         }
 
         # ===== 循环执行实例 =====
         for ina_budget in ina_num_list:
-            for Cs in Cs_list:
+            # for Cs in Cs_list:
                 for jobs_num in jobs_num_list:
                     dataset = generate_dataset_job(jobs_num, self.network.all_workers_id, instance_num, self.network.hosts_num, True)
                     
@@ -139,10 +144,6 @@ class SolutionAnalyzer:
         context_narrative = {
             "workload_description": f"{jobs_num} Concurrent DML Jobs (Moderate Load)",
             "acceleration_resource_budget": f"Allowed to deploy INA on {ina_budget} switches (approx {ina_budget/len(self.network.all_switches_id)*100:.1f}% of all switches).",
-            "hardware_capability": {
-                "switch_processing_power": f"{Cs} Gbps (Standard Programmable Switch)",
-                "server_uplink_capacity": f"{Ps} Gbps (High-Performance NIC for PS)"
-            },
             "job_spatial_distribution": self._analyze_job_locality_narrative(solver.problem_data["instance"])
         }
 
@@ -453,41 +454,43 @@ class SolutionAnalyzer:
         生成关于 Job 分布的自然语言描述。
         """
         descriptions = []
+        job_sizes = instance.get("jobs_size", [])
+        
         for j, w_ids in enumerate(instance["workers_id"]):
+            size_val = job_sizes[j]
+
             # 简化逻辑：假设我们能算出 Pod
             # 实际代码中需要调用 self._get_node_pod(w)
             pods = set([self._get_node_pod(w) for w in w_ids])
             if len(pods) == 1:
-                desc = f"Job {j}: Localized (Ideal). All workers inside Pod {list(pods)[0]}."
+                desc = f"Job {j} (Size: {size_val}MB): All workers inside Pod {list(pods)[0]}."
             else:
-                desc = f"Job {j}: Fragmented (Challenging). Spread across {len(pods)} Pods. Needs Core bandwidth."
+                # 指明具体跨越了哪些 Pod
+                desc = f"Job {j} (Size: {size_val}MB): Spread across {len(pods)} Pods {sorted(list(pods))}."
             descriptions.append(desc)
         return descriptions
 
     def _get_node_pod(self, node_id: int) -> int:
         """辅助函数：根据 ID 判断节点所在的 Pod"""
         # FatTree 拓扑中，根据 ID 范围或连接关系推断 Pod
-        # 这里使用简化的计算逻辑，假设 ID 是连续分配的，且结构规整
-        # Pod ID = (ToR ID - offset) // (k / 2)
-        if self.node_roles.get(node_id) == "ToR":
-             try:
-                 offset = self.network.hosts_num * len(self.network.tors_id) # 假设 ToR ID 从 host 之后开始
-                 # 更稳健的方法是利用 tors_id 列表的索引
-                 if node_id in self.network.tors_id:
-                     idx = self.network.tors_id.index(node_id)
-                     return idx // (self.k // 2)
-             except:
-                 pass
+        # 逻辑：ToR 是按 Pod 顺序生成的，每个 Pod 有 k/2 个 ToR
         
-        # 如果是 Worker，找到它直连的 ToR
-        # 假设拓扑图中已经有连接关系
+        # 1. 如果节点本身是 ToR
+        if self.node_roles.get(node_id) == "ToR":
+             if hasattr(self.network, "tors_id") and node_id in self.network.tors_id:
+                 idx = self.network.tors_id.index(node_id)
+                 # SpineLeaf 没有 Pod 概念，或者 k 参数对其无意义，默认返回 0
+                 if self.topo_name == 'SpineLeaf':
+                     return 0
+                 return idx // (self.k // 2)
+        
+        # 2. 如果是 Worker，找到它直连的 ToR
         if self.node_roles.get(node_id) == "Server":
              neighbors = list(self.network.G.neighbors(node_id))
              for n in neighbors:
                  if self.node_roles.get(n) == "ToR":
-                     if n in self.network.tors_id:
-                         idx = self.network.tors_id.index(n)
-                         return idx // (self.k // 2)
+                     # 递归调用查 ToR 的 Pod
+                     return self._get_node_pod(n)
         
         return 0 # 默认 placeholder
     
@@ -512,16 +515,16 @@ class SolutionAnalyzer:
                 "location": b.get('semantic_label', 'Unknown Location'), 
                 "specific_link": f"{b.get('source', 'Unknown')} --> {b.get('target', 'Unknown')}",
                 "severity": "CRITICAL SATURATION (100 percent Full)",
-                "root_cause_hint": ""
+                # "root_cause_hint": ""
             }
             
             b_type = b.get('type', '')
             label = b.get('semantic_label', '')
 
-            if "PS_Port" in b_type:
-                insight["root_cause_hint"] = "Too many workers sending raw gradients directly to this PS. INA was not used effectively to reduce traffic volume."
-            elif "Core" in label:
-                insight["root_cause_hint"] = "Heavy Cross-Pod traffic detected. The algorithm failed to aggregate data within the local Pods before sending it up to the Core."
+            # if "PS_Port" in b_type:
+            #     insight["root_cause_hint"] = "Too many workers sending raw gradients directly to this PS. INA was not used effectively to reduce traffic volume."
+            # elif "Core" in label:
+            #     insight["root_cause_hint"] = "Heavy Cross-Pod traffic detected. The algorithm failed to aggregate data within the local Pods before sending it up to the Core."
             
             insights.append(insight)
         
@@ -545,7 +548,7 @@ class SolutionAnalyzer:
                 audit.append({
                     "switch": node_desc,
                     "status": "WASTED BUDGET",
-                    "observation": "INA feature enabled (costing budget) but processing ZERO traffic. Algorithm chose a poor location."
+                    "observation": "INA feature enabled (costing budget) but processing ZERO traffic."
                 })
             elif util > 0.99:
                 audit.append({
@@ -570,7 +573,7 @@ class SolutionAnalyzer:
             return usage
 
         all_ps_usage = []
-        Ps = float(solver.problem_data["Ps"])
+        # Ps = float(solver.problem_data["Ps"])
 
         # 遍历所有 PS (从 problem_data 中获取)
         all_ps_ids = set()
@@ -579,14 +582,14 @@ class SolutionAnalyzer:
 
         for ps_id in all_ps_ids:
             node_desc = self._get_node_desc(ps_id)
+            total_load = 0.0
             if ps_id in ps_usage:
-                utilization = float(get_usage(ps_id, ps_usage) / Ps) if Ps > 1e-9 else 0.0
+                total_load = get_usage(ps_id, ps_usage)
                 all_ps_usage.append({
                     "ps_id": str(ps_id),
                     "node_description": node_desc,
                     "usage": ps_usage[ps_id],
-                    "capacity_gbps": Ps,
-                    "utilization": utilization
+                    "load": total_load
                 })
             else:
                  # 未使用的 PS
@@ -594,8 +597,7 @@ class SolutionAnalyzer:
                     "ps_id": str(ps_id),
                     "node_description": node_desc,
                     "usage": None,
-                    "capacity_gbps": Ps,
-                    "utilization": 0.0
+                    "load": 0.0
                 })
         return all_ps_usage
 
@@ -607,32 +609,30 @@ class SolutionAnalyzer:
         for s in raw_ps_usage:
             if isinstance(s, str): continue
             
-            util = s.get('utilization', 0.0)
             node_desc = s.get('node_description', 'Unknown PS')
+            load = s.get('load', 0.0)
             
             # 统计 job 详情
             job_details = ""
+            total_workers = 0
             if s.get("usage"):
                 for job_id, stats in s["usage"].items():
-                    job_details += f"[Job {job_id}: {stats['workers_count']} workers] "
+                    w_count = stats['workers_count']
+                    total_workers += w_count
+                    job_details += f"[Job {job_id}: {w_count} workers] "
             
-            if util > 0.99:
-                audit.append({
-                    "ps_node": node_desc,
-                    "status": "OVERLOADED",
-                    "observation": f"PS Bandwidth saturated. Handling: {job_details}"
-                })
-            elif util < 0.01:
+            if total_workers == 0:
                  audit.append({
                     "ps_node": node_desc,
                     "status": "IDLE",
-                    "observation": "PS has almost no traffic."
+                    "observation": "PS has no aggregated workers."
                 })
             else:
                 audit.append({
                     "ps_node": node_desc,
                     "status": "Active",
-                    "utilization": f"{util*100:.1f}%",
+                    "total_workers": total_workers,
+                    "load": f"{load:.2f} Gbps",
                     "details": job_details.strip()
                 })
         return audit
