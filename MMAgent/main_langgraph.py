@@ -107,11 +107,20 @@ def main():
     #     api_base='https://api.chatanywhere.tech/v1'
     # )
     # llm = LLM(
-    #     model_name='deepseek-chat',
-    #     key='sk-QgwSYarxYIP3OBxV4MMA3SbYE1MkmHmVd5MtM1SQj7EaGaQA',
-    #     api_base='https://jeniya.cn/v1/'
+    #     model_name='deepseek-r1-distill-llama-70b',
+    #     key='any',
+    #     api_base='http://192.168.2.126:8080/v1'
     # )
-    
+    # llm = LLM(
+    #     model_name='/root/.cache/modelscope/hub/models/Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ',
+    #     key='any',
+    #     api_base='http://localhost:8080/v1'
+    # )
+    # llm = LLM(
+    #     model_name='/root/.cache/modelscope/hub/models/Qwen/Qwen2.5-72B-Instruct-AWQ',
+    #     key='any',
+    #     api_base='http://localhost:8080/v1'
+    # )
     # 创建初始状态（所有解析和构造都在内部完成）
     initial_state = create_agent_state(
         llm=llm,

@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import List, Dict, Tuple, Any, Optional
 import copy
 import networkx as nx
-from MMBench.problem.problem_template.runtime.TemplateSolver import TemplateSolver
+from MMBench.problem.LLMINA.runtime.TemplateSolver import TemplateSolver
 
 class ModelSolver(TemplateSolver):
     """

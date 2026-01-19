@@ -1,0 +1,340 @@
+[
+  {
+    "name": "_init_state",
+    "strategic_role": "Initializes persistent state required for heuristic execution.",
+    "function_descriptions": "Step 1. Initialize `self.assigned_workers` = [] as a jagged list of length `self.jobs_num`, where each inner list is empty. Step 2. Initialize `self.ina_placement` = [] as a list of selected switch IDs. Step 3. Initialize `self.workers_to_switch_load` = {} as a dictionary mapping (job_id, switch_id) to total incoming rate (Gbps). Step 4. Initialize `self.switch_load` = {} as a dictionary mapping switch_id to total aggregate incoming rate from all jobs. Step 5. Initialize `self.job_effective_rate` = {} as a dictionary mapping job_id to its effective rate (Gbps).",
+    "inputs": [],
+    "outputs": [],
+    "member_variables_read": [
+      {
+        "name": "self.jobs_num",
+        "type": "int",
+        "description": "Number of jobs to be processed."
+      },
+      {
+        "name": "self.ina_candidates",
+        "type": "List[int]",
+        "description": "List of candidate switch IDs for INA placement."
+      }
+    ],
+    "member_variables_written": [
+      {
+        "name": "self.assigned_workers",
+        "type": "List[List[int]]",
+        "description": "Stores the assignment of each worker to an aggregation node; initialized as empty lists."
+      },
+      {
+        "name": "self.ina_placement",
+        "type": "List[int]",
+        "description": "List of switch IDs selected for INA deployment; initialized as empty."
+      },
+      {
+        "name": "self.workers_to_switch_load",
+        "type": "Dict[Tuple[int, int], float]",
+        "description": "Tracks the total data rate (Gbps) from workers to each switch; initialized as empty dictionary."
+      },
+      {
+        "name": "self.switch_load",
+        "type": "Dict[int, float]",
+        "description": "Tracks total incoming data rate (Gbps) at each switch; initialized as empty dictionary."
+      },
+      {
+        "name": "self.job_effective_rate",
+        "type": "Dict[int, float]",
+        "description": "Stores the effective throughput (Gbps) of each job; initialized as empty dictionary."
+      }
+    ],
+    "dependencies": []
+  },
+  {
+    "name": "_compute_worker_criticality_score",
+    "strategic_role": "Scores each worker by its potential to bottleneck job completion, based on volume and path length.",
+    "function_descriptions": "Step 1. Initialize `self.worker_criticality` = {} as a dictionary mapping (job_id, worker_id) to a float score. Step 2. For each job j in range(0, self.jobs_num): Step 2.1. Let m_j = self.jobs_size[j]. Step 2.2. Let d_j = self.ps_id[j]. Step 2.3. For each worker w in self.workers_id[j]: Step 2.3.1. Compute path from worker w to PS d_j using `self._get_path_links(w, d_j)`. Step 2.3.2. Let path_length = len(path) (in number of links). Step 2.3.3. Compute criticality = m_j / path_length (volume per hop). Step 2.3.4. Store `self.worker_criticality[(j, w)] = criticality`. Step 3. Return nothing.",
+    "inputs": [],
+    "outputs": [],
+    "member_variables_read": [
+      {
+        "name": "self.jobs_size",
+        "type": "List[float]",
+        "description": "Gradient volume per iteration for each job."
+      },
+      {
+        "name": "self.ps_id",
+        "type": "List[int]",
+        "description": "Parameter Server node ID for each job."
+      },
+      {
+        "name": "self.workers_id",
+        "type": "List[List[int]]",
+        "description": "List of worker node IDs per job."
+      },
+      {
+        "name": "self._get_path_links",
+        "type": "Callable[[int, int], List[Tuple[int, int]]]",
+        "description": "Helper to retrieve shortest path between two nodes."
+      }
+    ],
+    "member_variables_written": [
+      {
+        "name": "self.worker_criticality",
+        "type": "Dict[Tuple[int, int], float]",
+        "description": "Maps (job_id, worker_id) to a criticality score based on volume and path length."
+      }
+    ],
+    "dependencies": []
+  },
+  {
+    "name": "_assign_workers_to_agg_points",
+    "strategic_role": "Assigns each worker in every job to the optimal aggregation point (INA switch or PS) based on shortest path, ensuring correct initialization and assignment with strict cardinality guarantees.",
+    "function_descriptions": "Step 1. Verify that `self.assigned_workers` is properly initialized with exactly `self.jobs_num` empty lists. If not, initialize it as a jagged list of empty lists with length `self.jobs_num`. Step 2. For each job j in range(0, self.jobs_num): Step 2.1. Let workers_for_job = self.workers_id[j]. Step 2.2. If workers_for_job is empty, ensure `self.assigned_workers[j]` is an empty list and continue. Step 2.3. Confirm that `self.assigned_workers[j]` has been initialized and is empty. Step 2.4. For each worker w in workers_for_job: Step 2.4.1. Set `best_node = self.ps_id[j]` (default assignment: PS). Step 2.4.2. Set `best_cost = float('inf')`. Step 2.4.3. For each possible aggregation node v in (`self.ina_placement + [self.ps_id[j]]`): Step 2.4.3.1. Skip if v is not in `self.G` or v is None. Step 2.4.3.2. Compute path from worker w to v using `self._get_path_links(w, v)`. Step 2.4.3.3. Let `cost = len(path)` (hop count). Step 2.4.3.4. If `cost < best_cost`, update `best_node = v` and `best_cost = cost`. Step 2.4.4. Append `best_node` to `self.assigned_workers[j]`. Step 2.5. Validate that `len(self.assigned_workers[j]) == len(workers_for_job)` and that the list is non-empty. If not, raise an AssertionError with message 'Assignment count mismatch for job {j}: expected {len(workers_for_job)}, got {len(self.assigned_workers[j])}'. Step 3. Return nothing.",
+    "inputs": [],
+    "outputs": [],
+    "member_variables_read": [
+      {
+        "name": "self.ina_placement",
+        "type": "List[int]",
+        "description": "List of switches selected for INA placement."
+      },
+      {
+        "name": "self.ps_id",
+        "type": "List[int]",
+        "description": "Parameter Server node ID for each job."
+      },
+      {
+        "name": "self.workers_id",
+        "type": "List[List[int]]",
+        "description": "List of worker node IDs per job."
+      },
+      {
+        "name": "self._get_path_links",
+        "type": "Callable[[int, int], List[Tuple[int, int]]]",
+        "description": "Helper to retrieve shortest path between two nodes."
+      },
+      {
+        "name": "self.G",
+        "type": "nx.Graph",
+        "description": "Physical network graph containing all nodes and edges."
+      }
+    ],
+    "member_variables_written": [
+      {
+        "name": "self.assigned_workers",
+        "type": "List[List[int]]",
+        "description": "Final worker-to-aggregation-point assignment for all jobs. Each job j is assigned a list of length len(self.workers_id[j]), with one entry per worker in order."
+      }
+    ],
+    "dependencies": []
+  },
+  {
+    "name": "_evaluate_load_and_update_rates",
+    "strategic_role": "Computes the effective rate and load distribution for all switches and jobs using the simulator.",
+    "function_descriptions": "Step 1. Call `_init_state`. Step 2. If `self.assigned_workers` is empty or `self.ina_placement` is empty: return None. Step 3. Call `self.get_makespan` with `self.ina_placement` and `self.assigned_workers` as inputs. Step 4. Store the returned tuple: `makespan, job_rates = self.get_makespan(self.ina_placement, self.assigned_workers)`. Step 5. Update `self.job_effective_rate = job_rates`. Step 6. For each job j in job_rates: Step 6.1. Let rate_j = job_rates[j]. Step 6.2. For each worker w in self.workers_id[j]: Step 6.2.1. Let v = self.assigned_workers[j][w]. Step 6.2.2. If v is not self.ps_id[j]: Step 6.2.2.1. Increment `self.workers_to_switch_load[(j, v)] += rate_j` Step 6.2.2.2. Increment `self.switch_load[v] += rate_j`. Step 7. Return makespan.",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "makespan",
+        "type": "float",
+        "description": "The minimum time (seconds) to complete all jobs under current configuration."
+      }
+    ],
+    "member_variables_read": [
+      {
+        "name": "self.assigned_workers",
+        "type": "List[List[int]]",
+        "description": "Worker-to-aggregation-node assignment."
+      },
+      {
+        "name": "self.ina_placement",
+        "type": "List[int]",
+        "description": "List of INA-enabled switches."
+      },
+      {
+        "name": "self.jobs_size",
+        "type": "List[float]",
+        "description": "Gradient volume per job (in Gb)."
+      },
+      {
+        "name": "self.ps_id",
+        "type": "List[int]",
+        "description": "PS node ID for each job."
+      }
+    ],
+    "member_variables_written": [
+      {
+        "name": "self.job_effective_rate",
+        "type": "Dict[int, float]",
+        "description": "Stores the effective throughput (Gbps) of each job."
+      },
+      {
+        "name": "self.workers_to_switch_load",
+        "type": "Dict[Tuple[int, int], float]",
+        "description": "Tracks the total incoming rate to each switch from each job."
+      },
+      {
+        "name": "self.switch_load",
+        "type": "Dict[int, float]",
+        "description": "Tracks total incoming rate at each switch."
+      }
+    ],
+    "dependencies": [
+      "_init_state",
+      "get_makespan"
+    ]
+  },
+  {
+    "name": "_compute_switch_criticality_score",
+    "strategic_role": "Computes a priority score for each candidate switch based on traffic concentration and job proximity.",
+    "function_descriptions": "Step 1. Initialize `self.switch_criticality` = {} as a dictionary mapping switch_id to a float score. Step 2. For each switch s in self.ina_candidates: Step 2.1. Let total_score = 0.0. Step 2.2. For each job j in range(0, self.jobs_num): Step 2.2.1. Let d_j = self.ps_id[j]. Step 2.2.2. Let path_to_ps = self._get_path_links(s, d_j). Step 2.2.3. If path_to_ps is empty, skip. Step 2.2.4. Let distance_to_ps = len(path_to_ps). Step 2.2.5. For each worker w in self.workers_id[j]: Step 2.2.5.1. Let c = self.worker_criticality.get((j, w), 0.0). Step 2.2.5.2. Add c / distance_to_ps to total_score. Step 2.2.6. End loop over workers. Step 2.3. Store `self.switch_criticality[s] = total_score`. Step 3. Return nothing.",
+    "inputs": [],
+    "outputs": [],
+    "member_variables_read": [
+      {
+        "name": "self.ina_candidates",
+        "type": "List[int]",
+        "description": "Eligible switches for INA placement."
+      },
+      {
+        "name": "self.ps_id",
+        "type": "List[int]",
+        "description": "Parameter Server node ID for each job."
+      },
+      {
+        "name": "self.workers_id",
+        "type": "List[List[int]]",
+        "description": "List of worker node IDs per job."
+      },
+      {
+        "name": "self.worker_criticality",
+        "type": "Dict[Tuple[int, int], float]",
+        "description": "Scores for each worker based on volume and path length."
+      },
+      {
+        "name": "self._get_path_links",
+        "type": "Callable[[int, int], List[Tuple[int, int]]]",
+        "description": "Retrieves shortest path between two nodes."
+      }
+    ],
+    "member_variables_written": [
+      {
+        "name": "self.switch_criticality",
+        "type": "Dict[int, float]",
+        "description": "Scores each switch based on aggregate worker criticality weighted by distance to PS."
+      }
+    ],
+    "dependencies": [
+      "_compute_worker_criticality_score"
+    ]
+  },
+  {
+    "name": "_local_improvement_swap",
+    "strategic_role": "Refines the solution via worker swaps to reduce switch load and improve makespan.",
+    "function_descriptions": "Step 1. Call `_evaluate_load_and_update_rates` and store the initial makespan as `best_makespan`. Step 2. For each job j in range(0, self.jobs_num): Step 2.1. For each worker w in range(0, self.workers_num[j]): Step 2.1.1. Let current_agg = self.assigned_workers[j][w]. Step 2.1.2. If current_agg is self.ps_id[j]: continue. Step 2.1.3. For each alternative_agg in (self.ina_placement + [self.ps_id[j]]): Step 2.1.3.1. If alternative_agg == current_agg: skip. Step 2.1.3.2. Simulate swap: temporarily assign worker w to alternative_agg. Step 2.1.3.3. Re-evaluate the configuration: call `_evaluate_load_and_update_rates` on updated assignments. Step 2.1.3.4. If the new makespan is lower than `best_makespan`, update `best_makespan`, record the swap, and apply it permanently. Step 2.1.3.5. Revert the assignment after simulation. Step 3. Return nothing.",
+    "inputs": [],
+    "outputs": [],
+    "member_variables_read": [
+      {
+        "name": "self.assigned_workers",
+        "type": "List[List[int]]",
+        "description": "Current worker-to-aggregation assignment."
+      },
+      {
+        "name": "self.ina_placement",
+        "type": "List[int]",
+        "description": "List of INA-enabled switches."
+      },
+      {
+        "name": "self.ps_id",
+        "type": "List[int]",
+        "description": "PS node ID for each job."
+      },
+      {
+        "name": "self.workers_num",
+        "type": "List[int]",
+        "description": "Number of workers per job."
+      }
+    ],
+    "member_variables_written": [
+      {
+        "name": "self.assigned_workers",
+        "type": "List[List[int]]",
+        "description": "Updated worker assignments after successful swaps."
+      }
+    ],
+    "dependencies": [
+      "_evaluate_load_and_update_rates"
+    ]
+  },
+  {
+    "name": "_greedy_ina_placement",
+    "strategic_role": "Selects the top B_INA switches with highest criticality scores for INA deployment.",
+    "function_descriptions": "Step 1. Call `_compute_switch_criticality_score`. Step 2. Sort `self.ina_candidates` by `self.switch_criticality[s]` in descending order. Step 3. Initialize `selected_switches` = [] as an empty list. Step 4. For each switch s in the sorted list: Step 4.1. If len(selected_switches) >= self.ina_budget: break. Step 4.2. Append s to `selected_switches`. Step 5. Set `self.ina_placement = selected_switches`. Step 6. Return nothing.",
+    "inputs": [],
+    "outputs": [],
+    "member_variables_read": [
+      {
+        "name": "self.ina_candidates",
+        "type": "List[int]",
+        "description": "List of eligible switches for INA."
+      },
+      {
+        "name": "self.switch_criticality",
+        "type": "Dict[int, float]",
+        "description": "Criticality score for each candidate switch."
+      },
+      {
+        "name": "self.ina_budget",
+        "type": "int",
+        "description": "Maximum number of switches allowed to host INA."
+      }
+    ],
+    "member_variables_written": [
+      {
+        "name": "self.ina_placement",
+        "type": "List[int]",
+        "description": "Final list of INA-enabled switches, selected greedily based on criticality."
+      }
+    ],
+    "dependencies": [
+      "_compute_switch_criticality_score"
+    ]
+  },
+  {
+    "name": "solve_with_heuristic",
+    "strategic_role": "Orchestrator: Main driver of the algorithm.",
+    "function_descriptions": "Step 1. Call `_init_state` to initialize persistent state once. Step 2. Call `_compute_worker_criticality_score` to compute worker criticality scores before placement. Step 3. Call `_greedy_ina_placement` to select INA switches based on criticality. Step 4. Call `_assign_workers_to_agg_points` (now safely handles assignments without state reset). Step 5. Call `_local_improvement_swap`. Step 6. Construct `self.solution` with `self.ina_placement` and `self.assigned_workers` as a list-of-lists. Specifically: For each job j, create a list of aggregation nodes in the same order as the workers in `self.workers_id[j]` — this ensures `self.solution['worker_agg_id']` is a List[List[int]] as required. Step 7. Return `self.solution`.",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "solution",
+        "type": "Dict[str, Any]",
+        "description": "Final solution object with INA placement and worker routing. worker_agg_id is a List[List[int]] where index j corresponds to job j, and the inner list contains the aggregation node ID for each worker in that job in the same order as self.workers_id[j]."
+      }
+    ],
+    "member_variables_read": [
+      {
+        "name": "self.ina_placement",
+        "type": "List[int]",
+        "description": "Selected INA-enabled switches."
+      },
+      {
+        "name": "self.assigned_workers",
+        "type": "List[List[int]]",
+        "description": "Worker-to-aggregation-node assignments, stored as a list of lists (one per job, with assignments in worker index order)."
+      }
+    ],
+    "member_variables_written": [
+      {
+        "name": "self.solution",
+        "type": "Dict[str, Any]",
+        "description": "Final output stored in the class attribute. worker_agg_id is a List[List[int]] representing assignment of each worker to an aggregation node."
+      }
+    ],
+    "dependencies": [
+      "_init_state",
+      "_compute_worker_criticality_score",
+      "_greedy_ina_placement",
+      "_assign_workers_to_agg_points",
+      "_local_improvement_swap"
+    ]
+  }
+]

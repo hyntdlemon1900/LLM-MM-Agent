@@ -2,16 +2,16 @@ from __future__ import annotations
 from typing import List, Dict, Tuple, Any, Optional
 import copy
 import networkx as nx
-from MMBench.problem.problem_template.runtime.TemplateSolver import TemplateSolver
+from MMBench.problem.LLMINA.runtime.TemplateSolver import TemplateSolver
+import random
 
 class ModelSolver(TemplateSolver):
     """
     MILP Solver for the LLMINA (In-Network Aggregation) Problem.
     
-    This class prepares the data context for the optimization model. 
-    It explicitly unpacks the complex 'instance' and 'network' objects into 
-    flat member variables to ensure the downstream LLM understands the physical 
-    topology and logical job requirements.
+    This class provides the **Architectural Context** for the Data Center Network.
+    It unpacks the physical topology (Fat-Tree) and logical job requirements 
+    into a structured format usable by heuristic algorithms.
     """
 
     def __init__(
@@ -21,20 +21,20 @@ class ModelSolver(TemplateSolver):
         ina_budget: int,
         jobs_num: int,
         Cs: float = 750.0,
-        Ps: float = 200.0,
+        base_bw: float = 100.0,
         topo_name: str = "FatTree",
     ):
         """
-        Initializes the solver.
+        Initializes the solver context.
         
         Args:
-            instance (dict): A dictionary containing Distributed ML Job specifications.
-            network (object): A complex object representing the Datacenter Network Topology.
-            ina_budget(int): Resource Budget - Max number of switches allowed to enable INA.
-            jobs_num (int): Number of concurrent training jobs.
-            Cs (float): Switching Capacity (throughput limit) for INA processing.
-            Ps (float): Physical bandwidth limit of the Parameter Server's NIC (last hop).
-            topo_name (str): Name of the topology (e.g., "FatTree").
+            instance (dict): Job specifications (Workers, PS, Volume).
+            network (object): Physical Network Topology Object.
+            ina_budget(int): Max number of INA-enabled switches allowed.
+            jobs_num (int): Number of concurrent jobs.
+            Cs (float): Switch Processing Throughput (Gbps).
+            base_bw (float): Link Bandwidth (Gbps).
+            topo_name (str): Topology type (e.g., "FatTree").
         """
         # Store raw inputs
         problem_data = {
@@ -43,7 +43,7 @@ class ModelSolver(TemplateSolver):
             "ina_budget": ina_budget,
             "jobs_num": jobs_num,
             "Cs": Cs,
-            "Ps": Ps,
+            "base_bw": base_bw,
             "topo_name": topo_name,
         }
         super().__init__(problem_data)
@@ -55,46 +55,58 @@ class ModelSolver(TemplateSolver):
 
     def _preprocess_data(self) -> None:
         """
-        DATA PREPROCESSING & SCHEMA DEFINITION
+        DATA PREPROCESSING & ARCHITECTURE DEFINITION
         
-        This method unpacks the 'instance' dictionary and 'network' object into explicit 
-        class member variables. It also documents the physical structure of the network 
-        to ensure the optimization model respects the underlying topology.
+        This method documents the **Physical Network Specifications**.
+        It defines the topology structure and hardware throughput limits that constitute 
+        the constraint environment for the algorithm.
         """
         
         # =========================================================================
-        # [Context] Network Topology & Physical Constraints (Fat-Tree)
+        # 1. PHYSICAL TOPOLOGY STRUCTURE (Fat-Tree)
         # =========================================================================
-        # The cluster uses a standard 3-tier Fat-Tree topology organized into "Pods".
-        # Understanding the bandwidth hierarchy and physical limits is CRITICAL.
+        # The cluster uses a standard 3-tier Fat-Tree topology.
         #
-        # 1. Physical Hierarchy (Three Layers):
-        #    - Edge Layer (ToR Switches): The bottom layer. This is the ONLY layer
-        #      where endpoints connect. **BOTH Workers and Parameter Servers (PS)
-        #      are physically attached to these switches.**
-        #    - Aggregation Layer (Aggr Switches): Middle layer. Connects multiple
-        #      ToR switches to form a "Pod".
-        #    - Core Layer (Core Switches): Top layer. Interconnects different Pods.
+        # [A] CONNECTIVITY HIERARCHY:
+        #    1. Edge Layer (ToR Switches): 
+        #       - Connectivity: Directly connected to Servers.
+        #       - Specification: Each ToR connects to exactly **20 Servers**.
+        #    2. Aggregation Layer (Aggr Switches): 
+        #       - Connectivity: Interconnects ToR switches.
+        #    3. Core Layer (Core Switches): 
+        #       - Connectivity: Interconnects different Pods.
         #
-        # 2. Critical Bandwidth Bottleneck (2:1 Oversubscription):
-        #    The network is designed with a specific "Oversubscription Ratio" to
-        #    reflect realistic Data Center constraints:
-        #    - Tapering Rule: At both Edge and Aggregation layers, the total bandwidth
-        #      of Downlink ports (facing servers) is approximately TWICE the total
-        #      bandwidth of Uplink ports (facing the core).
-        #    - Consequence: This creates a **2:1 Bottleneck** for any traffic moving
-        #      upwards. Traffic leaving a Pod (Cross-Pod) fights for half the
-        #      bandwidth available to traffic staying inside a Pod (Intra-Pod).
+        # [B] LOGICAL GROUPING (PODs):
+        #    - A "Pod" consists of a set of ToR and Aggr switches.
+        #    - Intra-Pod Path: Server -> ToR -> Aggr -> ToR -> Server.
+        #    - Inter-Pod Path: Server -> ToR -> Aggr -> Core -> Aggr -> ToR -> Server.
         #
-        # 3. Server Access Links (The "Last Mile"):
-        #    - Worker Connection: Workers connect to ToR switches with standard
-        #      baseline bandwidth.
-        #    - PS Connection: Parameter Servers also connect to ToR switches, but
-        #      are provisioned with **DOUBLE (2x) the bandwidth** of a standard
-        #      worker link.
-        #    - Bottleneck Warning: Despite the 2x capacity, the PS link is a strict
-        #      "Many-to-One" bottleneck (Incast) because all workers of a job send
-        #      data to this single link simultaneously.
+        # =========================================================================
+        # 2. HARDWARE THROUGHPUT SPECIFICATIONS (The Constraints)
+        # =========================================================================
+        # Congestion occurs whenever Traffic Rate > Link Bandwidth at ANY location.
+        #
+        # [A] SERVER ACCESS LINKS (The "Last Hop"):
+        #    - Definition: The physical link connecting a Server (Worker/PS) to a ToR.
+        #    - Bandwidth: Fixed at `base_bw` (Gbps).
+        #    - Constraint: The sum of bidirectional traffic on this link cannot exceed `base_bw`.
+        #
+        # [B] SWITCH UPLINKS (The Fabric Links):
+        #    - Definition: Links connecting ToR -> Aggr and Aggr -> Core.
+        #    - Bandwidth ratio: The topology design has a **2:1 Oversubscription Ratio** #      at the Edge layer (Total Downlink Bandwidth = 2 * Total Uplink Bandwidth).
+        #    - Constraint: Traffic leaving a ToR is limited by this physical ratio.
+        #
+        # [C] SWITCH PROCESSING UNIT:
+        #    - Definition: The computation capability of a switch if INA is enabled.
+        #    - Throughput: Fixed at `Cs` (Gbps).
+        #    - Constraint: Sum(Incoming Flow Rates) <= Cs.
+        #
+        # =========================================================================
+        # 3. PHYSICS OF FLOW (Conservation Laws)
+        # =========================================================================
+        #    1. Rate Definition: Rate (Gbps) = Volume (Gb) / Time (s).
+        #    2. Flow Conservation: A flow with Rate R consumes R bandwidth on 
+        #       **every single link** it traverses.
         # =========================================================================
 
         # Load raw source objects
@@ -107,7 +119,7 @@ class ModelSolver(TemplateSolver):
         self.ina_budget: int = self.problem_data["ina_budget"]                # INA Deployment Budget
         self.jobs_num: int = self.problem_data["jobs_num"]  # Total concurrent jobs
         self.Cs: float = float(self.problem_data["Cs"])     # Switch Processing Cap (Gbps)
-        self.Ps: float = float(self.problem_data["Ps"])     # PS Link Bandwidth (Gbps)
+        self.base_bw: float = float(self.problem_data["base_bw"])    # Server-ToR Link Bandwidth (Gbps)
         self.topo_name: str = self.problem_data["topo_name"]
 
         # -------------------------------------------------------------------------
@@ -146,8 +158,8 @@ class ModelSolver(TemplateSolver):
         self.allPathDict: Dict[int, Dict[int, List[int]]] = copy.deepcopy(raw_network.allPathDict)
 
         # [Bandwidth Map] network.bandwidth_mapping: Dict[Tuple[int, int], float]
-        # [Meaning] Capacity of directed physical links.
-        #           Key: (u, v), Value: Capacity in Gbps.
+        # [Meaning] Bandwidth of directed physical links.
+        #           Key: (u, v), Value: Bandwidth in Gbps.
         self.bandwidth_mapping: Dict[Tuple[int, int], float] = (
             copy.deepcopy(raw_network.bandwidth_mapping) 
             if hasattr(raw_network, "bandwidth_mapping") else {}
@@ -167,33 +179,9 @@ class ModelSolver(TemplateSolver):
         
         # [Variable] self.ina_candidates: List[int]
         # [Logic] Based on the topology, select which switches are programmable.
-        #         For Fat-Tree, usually ToR, Aggr, and Core are all candidates.
+        # For Fat-Tree, usually ToR, Aggr, and Core are all candidates.
         self.ina_candidates: List[int] = self._compute_ina_candidates()
         self.ina_candidates_num: int = len(self.ina_candidates)
-
-        # [Variable] self.sd_id: List[int]
-        # [Meaning] The "Gateway Switch" for each Job's PS.
-        #           self.sd_id[j] is the Switch Node ID directly connected to ps_id[j].
-        # [Physical Constraint] Since this is a Fat-Tree, self.sd_id[j] IS ALWAYS A ToR SWITCH.
-        #           This link (sd_id[j] <-> ps_id[j]) is the specific "PS Bottleneck".
-        self.sd_id: List[int] = []
-        for j in range(self.jobs_num):
-            ps_node = self.ps_id[j]
-            neighbors = list(self.G.neighbors(ps_node))
-            if not neighbors:
-                raise ValueError(f"PS node {ps_node} is isolated!")
-            self.sd_id.append(neighbors[0]) # The unique ToR switch for this PS
-
-        # -------------------------------------------------------------------------
-        # 5. Final Capacity Adjustments
-        # -------------------------------------------------------------------------
-        # Enforce the 'Ps' parameter on the last-hop link.
-        # The link between the PS and its ToR switch often has limited bandwidth (NIC limit).
-        for j in range(self.jobs_num):
-            s_node = self.sd_id[j]
-            p_node = self.ps_id[j]
-            self.bandwidth_mapping[(s_node, p_node)] = self.Ps
-            self.bandwidth_mapping[(p_node, s_node)] = self.Ps
 
     # =============================================================================
     # Helper Methods
@@ -223,31 +211,22 @@ class ModelSolver(TemplateSolver):
         path = self.allPathDict[src][dst]
         return [(path[i], path[i+1]) for i in range(len(path) - 1)]
 
-    def _get_node_pod(self, node_id: int) -> int:
+    def _get_node_pod(self, node_id: int) -> Optional[int]:
         """
-        Utility function to determine the Pod ID of a given node (Worker, PS, ToR, Aggr).
+        Determines the logical Pod ID for a given Node (Server or Switch).
         
-        Logic for FatTree (Based on topo.py):
-        - ToRs are generated sequentially: Pod 0, Pod 1, ...
-        - Aggrs are generated sequentially: Pod 0, Pod 1, ...
-        - k = FatTree arity.
-        - ToRs per Pod = k/2.
-        - Aggrs per Pod = k/2.
+        In a Fat-Tree topology, ToR and Aggregation switches (and their connected servers)
+        belong to specific Pods. 
         
-        Args:
-            node_id (int): The node ID.
-            
+        **CRITICAL**: Core Switches constitute the backbone and DO NOT belong to any Pod.
+        
         Returns:
-            int: The Pod ID (0-indexed). Returns -1 if not applicable or not found.
+            int: The Pod ID (0-indexed) if applicable.
+            None: If the node is a Core Switch or cannot be mapped.
         """
         if self.topo_name != "FatTree":
-            return 0  # SpineLeaf is considered single region/pod
+            return 0
             
-        # 1. Infer k_half (number of switches per pod in edge/aggr layer)
-        # From topo.py: EdgeSwitch_Count (num_tors) = (k^2) / 2
-        # We need k_half = k / 2.
-        # Math: num_tors = 2 * (k/2)^2 = 2 * k_half^2
-        # Therefore: k_half = sqrt(num_tors / 2)
         try:
             num_tors = len(self.tors_id)
             k_half = int((num_tors / 2) ** 0.5)
@@ -255,91 +234,58 @@ class ModelSolver(TemplateSolver):
         except Exception:
             return 0
 
-        # 2. Check ToR
+        # Check ToR
         if node_id in self.tors_id:
-            idx = self.tors_id.index(node_id)
-            return idx // k_half
+            return self.tors_id.index(node_id) // k_half
             
-        # 3. Check Aggr
+        # Check Aggr
         if node_id in self.aggrs_id:
-            idx = self.aggrs_id.index(node_id)
-            return idx // k_half
+            return self.aggrs_id.index(node_id) // k_half
             
-        # 4. Check Worker/PS (Server)
-        # Logic: Find the connecting ToR and ask for its Pod
+        # Check Server (Worker/PS) - use uplink ToR
         neighbors = list(self.G.neighbors(node_id))
         for n in neighbors:
             if n in self.tors_id:
-                idx = self.tors_id.index(n)
-                return idx // k_half
+                return self.tors_id.index(n) // k_half
                 
-        return -1
+        # Core Switches or isolated nodes have no Pod
+        return None
 
-    def _get_flows_on_link(
-        self,
-        edge: Tuple[int, int],
-        src_set: List[int],
-        dst_set: List[int]
-    ) -> List[Tuple[int, int]]:
-        """
-        Identifies which flows (src_idx -> dst_idx) traverse the given edge.
-        Used to construct Link Bandwidth Constraints.
-        
-        Returns:
-            List of (src_index, dst_index) tuples.
-        """
-        flows = []
-        edge_rev = (edge[1], edge[0])
-        
-        for s_idx, s_node in enumerate(src_set):
-            for d_idx, d_node in enumerate(dst_set):
-                path_edges = self._get_path_links(s_node, d_node)
-                # Check if the edge (or its reverse) is part of the flow's path
-                if edge in path_edges or edge_rev in path_edges:
-                    flows.append((s_idx, d_idx))
-        return flows
-
-    """
-    def solve_with_heuristic(self) -> Optional[Dict[str, Any]]:
-        '''
-        to be implemented below: solve the MILP model with heuristic methods
-        '''         
-        self.solution = {
-            # List of integer Node IDs of selected switches. 
-            # E.g., [101, 102, 205]
-            "ina_placement_switches": [], 
-            
-            # Nested Dictionary: Mapping [job_index][worker_index] -> Aggregation Node ID
-            # Key 1: Job index 'j' (int, 0 to jobs_num-1)
-            # Key 2: Worker index 'w' (int, 0 to workers_num[j]-1)
-            # Value: Node ID (int) of the chosen switch OR the PS node.
-            "worker_agg_id": {} 
-        }
-        return self.solution
-    """
-
-    def get_makespan(self, ina_placement_switches, worker_agg_id) -> Optional[float]:
+    def get_makespan(self, ina_placement_switches, worker_agg_id) -> Tuple[float, Dict[int, float]]:
         """
         Calculates the theoretically optimal makespan given a fixed INA deployment and routing configuration.
 
-        Methodology:
-            With the discrete decisions (INA placement `x` and worker assignments `y`) fixed, the original Mixed-Integer 
-            problem reduces to a continuous Linear Programming (LP) problem (specifically, a convex resource allocation problem).
-            
-            This function calculates the optimal gradient transmission rates by solving this continuous sub-problem, 
-            often utilizing a "Water-Filling" algorithm or standard LP solver. It identifies the limiting bottleneck 
-            (whether it be Link Bandwidth or Switch Processing Capacity) to determine the maximum feasible global 
-            pacing rate `alpha`, where the Makespan t = 1/alpha.
+        ---------------------------------------------------------------------------
+        ### FUNCTIONAL ROLE: THE ORACLE (SIMULATOR)
+        ---------------------------------------------------------------------------
+        This method acts as a "Black Box Simulator" or "Physics Engine" for your heuristic.
+        
+        - **Input**: A static configuration (Placement of INA switches + Routing of workers).
+        - **Operation**: It constructs and solves a continuous Linear Programming (LP) model.
+          It attempts to maximize the global traffic speed (Rate) while strictly respecting:
+            1. Link Bandwidth limits (Sum of Rates <= C_e).
+            2. Switch Processing limits (Sum of Rates <= C_s).
+            3. Flow Conservation (Rate is constant end-to-end).
+        - **Output**: The minimum possible Time (Makespan) required to finish the job under 
+          these constraints.
 
+        ---------------------------------------------------------------------------
+        ### USAGE GUIDE FOR ALGORITHM DESIGNERS
+        ---------------------------------------------------------------------------
+        You do NOT need to implement rate calculations or throughput checks manually inside this function.
+        You can use this function to **validate and score** the solutions generated 
+        by your heuristic logic.
+        WARNING: This function involves solving a Linear Programming (LP) model via an external solver.
+        COST: High (~50ms - 200ms per call).
         Args:
             ina_placement_switches (List[int]): The specific set of switches enabled with In-Network Aggregation.
-            worker_agg_id (Dict[int, Dict[int, int]]): The routing map defining where each worker sends its gradients 
-                                                       (Mapping: [job_idx][worker_idx] -> Aggregation Node ID).
-
+            worker_agg_id (Dict[int, Dict[int, int]]): The routing map defining where each worker sends its gradients.
+                **Structure**: { job_idx: { worker_idx: Aggregation_Node_ID } }
+        
         Returns:
-            Optional[float]: The minimum achievable makespan (time to complete one iteration) under these settings. 
-                             Returns None if the configuration is infeasible.
+            Tuple[float, Dict[int, float]]: 
+                - float: The minimum achievable makespan (Seconds).
+                - Dict[int, float]: A dictionary mapping job index to its effective rate (Gbps).
+
         """
         return super().get_makespan(ina_placement_switches, worker_agg_id)
-    
-    

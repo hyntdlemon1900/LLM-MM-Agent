@@ -39,7 +39,7 @@ class LLM:
             model=self.model_name,
             api_key=self.api_key,
             base_url=self.api_base,
-            temperature=0.7,
+            temperature=1,
             max_retries=2
         )
 
@@ -102,8 +102,7 @@ class LLM:
             
             if usage:
                 self.usages.append(usage_data)
-            
-            return answer
+                return answer
 
         except Exception as e:
             return f'An error occurred: {e}'

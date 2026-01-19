@@ -1,39 +1,27 @@
-"""
-简化的 LLMINA Agent 节点
-只返回增量更新，让 LangGraph 自动合并状态
-"""
-
-"""
-简化的 LLMINA Agent 节点
-只返回增量更新，让 LangGraph 自动合并状态
-"""
-
 import json
 import os
 import re
-import ast
-from pathlib import Path
 import sys
-import importlib.util
+import random
 import traceback
-import inspect
-import textwrap
+import copy
+import networkx as nx
 # 包导入 - 使用相对导入
 from .state import AgentState
-from typing import Dict, List, Any, Type, Optional
-from collections import defaultdict
-import statistics
-from collections import Counter
 from MMAgent.prompt import (
     PROBLEM_DESCRIPTION_PROMPT,
-    HEURISTIC_ARCHITECT_PROMPT,
     HEURISTIC_FUNCTION_CODE_GENERATION_PROMPT,
     HEURISTIC_FUNCTION_CODE_FIX_PROMPT,
-    HEURISTIC_REFLECT_PROMPT
+    HEURISTIC_REFLECT_PROMPT,
+    HEURISTIC_INITIALIZATION_PROMPT,
+    FEEDBACK_GUIDED_OPTIMIZATION_PROMPT,
+    EXPLORATORY_REFACTORING_PROMPT
 )
 from MMAgent.utils import *
+from .MCTS.mcts_core import MCTS, MCTSNode
 from MMBench.problem.LLMINA.runtime.solutionanalyzer import SolutionAnalyzer
 from MMBench.problem.LLMINA.runtime.evaluate_solver import SolverEvaluation
+from MMBench.problem.LLMINA.runtime.TemplateSolver import OUTPUT_FUNCTION_TEMPLATE
 
 # ============ 问题加载 ============
 def load_problem_node(state: AgentState) -> AgentState:   
@@ -61,163 +49,126 @@ def load_problem_node(state: AgentState) -> AgentState:
         'problem_path': problem_path,
     })
     
-    # 只返回增量更新，LangGraph 会自动合并
-    return {
-        'problem_str': problem_str,
-        'heuristic_reference_code': heuristic_reference_code,
-        'next_action': 'heuristic_architect'
-    }
+    try:
+        # Initialize MCTS First Turn (Genesis)
+        print("[Load Problem] Initializing MCTS First Turn (i1)...")
 
-# ============ 启发式架构设计 ============
-def heuristic_architect_node(state: AgentState) -> AgentState:
+        mcts_updates = mcts_turn_step(state, reward=None)
+        
+        return {
+            'problem_str': problem_str,
+            'heuristic_reference_code': heuristic_reference_code,
+            **mcts_updates
+            # next_action_node will be set by mcts_updates (likely 'initialization')
+        }
+    except Exception as e:
+        print(f"[Load Problem] MCTS Init Failed: {e}")
+        return {'next_action': 'end', 'errors': [str(e)]}
+
+# ============ 启发式初始化节点 ============
+def heuristic_initialization_node(state: AgentState) -> AgentState:
     """
-    启发式架构设计节点
+    Heuristic Initialization Node (i1 Operator)
     
-    不编写实现代码，只负责软件架构设计。
-    定义启发式算法的模块化组件。
-    
-    此版本适配的JSON结构
+    Generates the FIRST complete Function Architecture.
+    Acts as the 'Architect' for the genesis phase of the algorithm.
     """
     llm = state['llm']
-    problem_str = state['problem_str']
-    output_dir = state['output_dir']
+    
+    # Inputs
+    problem_str = state.get('problem_str', '')
     heuristic_reference_code = state.get('heuristic_reference_code', '')
+    experiences = state.get('experiences', [])
     
-    print(f"[Heuristic Architect] Designing function architecture...")
+    print("[Initialization] Designing new function architecture (i1)...")
     
-    # 构建提示词（传入问题描述和模板代码）
-    prompt = HEURISTIC_ARCHITECT_PROMPT.format(
+    # Using HEURISTIC_INITIALIZATION_PROMPT which is aliased to ARCHITECT_PROMPT
+    prompt = HEURISTIC_INITIALIZATION_PROMPT.format(
         problem_str=problem_str,
-        heuristic_reference_code=heuristic_reference_code
+        heuristic_reference_code=heuristic_reference_code,
+        experiences="\n".join(experiences) if experiences else "None",
+        output_function_template = OUTPUT_FUNCTION_TEMPLATE
     )
-    
+
     try:
         response = llm.generate(prompt)
-        
-        # 提取内容
         content = response.content if hasattr(response, 'content') else str(response)
-        # 清理可能的markdown代码块
-        # 移除 ```json 或 ``` 标记
+        
+        # Robust JSON extraction
         if '```json' in content:
             content = content.split('```json')[1].split('```')[0].strip()
         elif '```' in content:
-            # 尝试提取代码块内容
-            code_blocks = re.findall(r'```(?:\w+)?\s*(.*?)```', content, re.DOTALL)
-            if code_blocks:
-                content = code_blocks[0].strip()
-        # 查找JSON对象的边界 ---
-        json_start = content.find('{')
-        json_end = content.rfind('}') + 1
-        if json_start == -1 or json_end == 0:
-            raise ValueError(
-                f"No JSON object found in LLM response. "
-                f"Response starts with: {content[:200]}..."
-            )
-        # 提取JSON字符串
-        json_str = content[json_start:json_end].strip()
+             match = re.search(r'```(?:json)?(.*?)```', content, re.DOTALL)
+             if match: content = match.group(1).strip()
+             else: content = content.split('```')[1].strip()
         
-        # 解析JSON
-        try:
-            parsed_json = json.loads(json_str)
-        except json.JSONDecodeError as e:
-            raise ValueError(
-                f"Invalid JSON syntax in LLM response: {str(e)}\n"
-            )
+        parsed_json = json.loads(content)
         
-
-
-
-
-
-    # with open(state['output_dir']+'/heuristic_architecture.json', "r", encoding="utf-8") as f:
-    #     parsed_json = json.load(f)
-    # try:
-
-
-
-
-
-        # 验证顶层字段    
-        required_top_keys = ['problem_analysis', 'strategy_overview', 'function_architecture']
-        missing_top_keys = [key for key in required_top_keys if key not in parsed_json]
-        if missing_top_keys:
-            raise ValueError(f"JSON object missing required top-level keys: {missing_top_keys}")
-
-        problem_analysis = parsed_json['problem_analysis']
-        strategy_overview = parsed_json['strategy_overview']
+        # Validation
         function_architecture = parsed_json['function_architecture']
-
-        # 验证 function_architecture 列表
+        problem_analysis = parsed_json.get('problem_analysis', '')
+        strategy_overview = parsed_json.get('strategy_overview', '')
+        
         if not isinstance(function_architecture, list):
-            raise ValueError(
-                f"Expected 'function_architecture' to be a list, got {type(function_architecture).__name__}."
-            )
+             raise ValueError("function_architecture must be a list containing function dictionaries.")
+
+        # ============ Topological Sort based on Dependencies ============
+        print(f"[Initialization] Designing dependency graph for {len(function_architecture)} functions...")
         
-        if len(function_architecture) == 0:
-            raise ValueError("Function list 'function_architecture' is empty. At least one function is required.")
+        # 1. Start Building Helper Structures
+        func_map = {f['name']: f for f in function_architecture}
+        func_names = set(func_map.keys())
         
-        # 验证每个函数的必需字段
-        for i, func in enumerate(function_architecture):
-            if not isinstance(func, dict):
-                raise ValueError(
-                    f"Function {i+1} is not a dictionary, got {type(func).__name__}"
-                )
+        dep_graph_dict = {} # State storage field
+        G = nx.DiGraph()
+        
+        # 2. Add Nodes
+        for f in function_architecture:
+            G.add_node(f['name'])
             
-            required_fields = ['name', 'strategic_role', 'inputs', 'outputs', 'member_variables_read', 'member_variables_written', 'dependencies']
-            missing_fields = [field for field in required_fields if field not in func]
-            if missing_fields:
-                raise ValueError(
-                    f"Function {i+1} missing required fields: {missing_fields}. "
-                    f"Function data: {func}"
-                )
+        # 3. Add Edges (Dependency -> Function)
+        # Requirement: "The depended-upon function must appear BEFORE the function that depends on it."
+        # If A depends on B (A calls B), then B must come first.
+        # Edge B -> A ensures B comes before A in topological sort.
+        for f in function_architecture:
+            f_name = f['name']
+            dependencies = f.get('dependencies', [])
             
-            # 验证字段类型
-            if not isinstance(func['name'], str) or not func['name'].strip():
-                raise ValueError(f"Function {i+1} has invalid 'name': {func.get('name')}")
-            if not isinstance(func['strategic_role'], str) or not func['strategic_role'].strip():
-                raise ValueError(f"Function {i+1} has invalid 'strategic_role': {func.get('strategic_role')}")
-            for list_field in ['inputs', 'outputs', 'member_variables_read', 'member_variables_written', 'dependencies']:
-                if not isinstance(func[list_field], list):
-                    raise ValueError(f"Function {i+1} field '{list_field}' expected to be a list, got {type(func[list_field]).__name__}")
-       
-        # 保存架构设计
-        architecture_path = os.path.join(output_dir, 'heuristic_architecture.json')
+            # Filter: Only internal dependencies
+            valid_deps = [dep for dep in dependencies if dep in func_names]
+            
+            # Store for State
+            dep_graph_dict[f_name] = valid_deps
+            
+            for dep in valid_deps:
+                G.add_edge(dep, f_name) # dep comes before f_name
         
-        with open(architecture_path, 'w', encoding='utf-8') as f:
-            json.dump(parsed_json, f, indent=2, ensure_ascii=False)
-        print(f"[Heuristic Architect] Saved to {architecture_path}")
-        
-        # 记录日志
-        save_workflow_log(output_dir, 'heuristic_architect_completed', {
-            'problem_analysis': problem_analysis,
-            'strategy_overview': strategy_overview,
-            'function_count': len(function_architecture),
-            'functions': [f['name'] for f in function_architecture]
-        })
-        
-        # 返回增量更新 - 如果有函数则触发函数生成循环
-        next_action = 'generate_next_function' if len(function_architecture) > 0 else 'end'
+        # 4. Sort
+        try:
+            sorted_names = list(nx.topological_sort(G))
+            print(f"[Initialization] Topological Sort: {sorted_names}")
+        except nx.NetworkXUnfeasible:
+            print("[Initialization] Warning: Cycle detected in function dependencies! Falling back to original order.")
+            sorted_names = [f['name'] for f in function_architecture]
+            
+        # 5. Reconstruct sorted architecture list
+        sorted_architecture = [func_map[name] for name in sorted_names]
+
+        print(f"[Initialization] Designed and Sorted {len(function_architecture)} functions.")
         
         return {
             'problem_analysis': problem_analysis,
             'strategy_overview': strategy_overview,
-            'function_architecture': function_architecture,
-
-            'functions_to_generate': [1 for _ in range(len(function_architecture))],  # 标记所有函数待生成
-            'current_function_id': 0,  # 重置函数ID计数器
-            'next_action': next_action,
+            'function_architecture': sorted_architecture,
+            'function_dependency_graph': dep_graph_dict, 
+            'functions_to_generate': [1 for _ in range(len(sorted_architecture))], # Use sorted len
+            'current_function_id': 0,
+            'next_action': 'generate_next_function'
         }
-    
+        
     except Exception as e:
-        error_msg = f"Failed to parse heuristic architecture from LLM response: {str(e)}"
-        print(f"\n[Heuristic Architect] ✗ ERROR: {error_msg}")
-
-        # 返回错误状态
-        return {
-            'function_architecture': [],
-            'next_action': 'end',  # 跳过函数生成，直接集成
-            'errors': [error_msg],
-        }    
+        print(f"[Initialization] Failed: {traceback.format_exc()}")
+        return {"next_action": "end", "errors": [str(e)]}
 
 # ============ 启发式函数代码生成 ============
 def function_code_generator_node(state: AgentState) -> AgentState:
@@ -241,20 +192,35 @@ def function_code_generator_node(state: AgentState) -> AgentState:
     problem_str = state['problem_str']
     output_dir = state['output_dir']
     heuristic_reference_code = state.get('heuristic_reference_code', '')
+    function_codes = state.get('function_codes', {})
     experiences = state.get('experiences', [])
     
     total_functions = len(function_architecture)
     
-    # 检查是否已完成所有函数
+    # 检查是否已完成所有函数 (Safety check, though loop condition usually handles this)
     if current_function_id >= total_functions:
-        return {'next_action': 'integrate'}
-    elif functions_to_generate[current_function_id] == 0:
-        # 跳过已生成的函数
+         return {'next_action': 'integrate'}
+
+    # Main Logic Block inside the loop
+    if functions_to_generate[current_function_id] == 0:
+        # PURE SKIP logic
         print(f"[Function {current_function_id + 1}/{total_functions}] Skipping already generated function")
-        return {
-            'current_function_id': current_function_id + 1,
-            'next_action': 'generate_next_function',
-        }
+        
+        # Calculate next ID
+        next_id = current_function_id + 1
+        
+        # Check if we are done AFTER this skip
+        if next_id >= total_functions:
+             return {
+                 'current_function_id': next_id,
+                 'next_action': 'integrate'
+             }
+        else:
+             return {
+                 'current_function_id': next_id,
+                 'next_action': 'generate_next_function'
+             }
+             
     else:
         # 生成当前函数
         func_info = function_architecture[current_function_id]
@@ -273,42 +239,18 @@ def function_code_generator_node(state: AgentState) -> AgentState:
         for func_out in func_info.get('outputs', []):
             outputs_spec += f"- {func_out['name']} ({func_out['type']}): {func_out['description']}\n"
         
-        # 已完成函数摘要
-        completed_summary = ""
+        # 将已完成的函数代码拼接到 reference code 中
         if current_function_id > 0:
-            completed_summary = f"The following {current_function_id} functions have been completed and are available as methods of `self`. You can call them to reuse their logic:\n"
+            additional_code = ""
             for i in range(current_function_id):
                 prev_func = function_architecture[i]
                 prev_func_name = prev_func['name']
-                
-                # Construct clear signature
-                input_params = [f"{inp['name']}" for inp in prev_func.get('inputs', [])] # Just names for signature
-                signature_args = ", ".join(input_params)
-                
-                # Construct return hint
-                outputs_types = [out['type'] for out in prev_func.get('outputs', [])]
-                if not outputs_types:
-                    return_hint = "None"
-                elif len(outputs_types) == 1:
-                    return_hint = outputs_types[0]
-                else:
-                    return_hint = f"Tuple[{', '.join(outputs_types)}]"
-
-                completed_summary += f"\n### Method: `{prev_func_name}`\n"
-                completed_summary += f"- **Signature**: `self.{prev_func_name}({signature_args}) -> {return_hint}`\n"
-                completed_summary += f"- **Role**: {prev_func['strategic_role']}\n"
-                
-                # Detailed Input Specs
-                if prev_func.get('inputs', []):
-                    input_details = ", ".join([f"{inp['name']} ({inp['type']})" for inp in prev_func['inputs']])
-                    completed_summary += f"- **Arguments**: {input_details}\n"
-
-                # Side effects
-                written_vars = [mv['name'] for mv in prev_func.get('member_variables_written', [])]
-                if written_vars:
-                    completed_summary += f"- **Updates Member Variables**: {', '.join(written_vars)} (You can access these via `self.*` after calling)\n"
-        else:
-            completed_summary = "This is the first function. No previous functions have been completed yet."
+                if prev_func_name in function_codes:
+                    additional_code += f"\n\n    # Completed function: {prev_func_name}\n"
+                    additional_code += function_codes[prev_func_name] + "\n"
+            
+            # 更新 heuristic_reference_code，让 LLM 能看到已实现的函数代码上下文
+            heuristic_reference_code = heuristic_reference_code + "\n" + additional_code
         
         # 读写成员变量 如果列表为空，显式显示 "None"
         read_vars_list = [
@@ -331,185 +273,102 @@ def function_code_generator_node(state: AgentState) -> AgentState:
             total_functions=total_functions,
             function_name=func_name,
             function_strategic_role=func_info['strategic_role'],
-            inputs_spec=inputs_spec if inputs_spec else "None",
+            function_descriptions=func_info['function_descriptions'],
+            inputs_spec=inputs_spec,
             outputs_spec=outputs_spec if outputs_spec else "None",
             dependencies=", ".join(func_info.get('dependencies', [])) if func_info.get('dependencies') else "None",
-            completed_functions_summary=completed_summary,
             member_variables_read=member_variables_read,
             member_variables_written=member_variables_written,
             experiences="\n".join(experiences) if experiences else "None",
         )
         
         # 调用 LLM 生成代码
-        try:
-            print(f"  [Code Generation] Generating code for {func_name}...")
-            response = llm.generate(prompt)
-             # 提取内容
-            content = response.content if hasattr(response, 'content') else str(response)
-            # 清理可能的markdown代码块
-            # 移除 ```json 或 ``` 标记
-            if '```json' in content:
-                content = content.split('```json')[1].split('```')[0].strip()
-            elif '```' in content:
-                # 尝试提取代码块内容
-                code_blocks = re.findall(r'```(?:\w+)?\s*(.*?)```', content, re.DOTALL)
-                if code_blocks:
-                    content = code_blocks[0].strip()
-            # 查找JSON对象的边界 ---
-            json_start = content.find('{')
-            json_end = content.rfind('}') + 1
-            if json_start == -1 or json_end == 0:
-                raise ValueError(
-                    f"No JSON object found in LLM response. "
-                    f"Response starts with: {content[:200]}..."
-                )
-            # 提取JSON字符串
-            json_str = content[json_start:json_end].strip()
-            
-            # 解析JSON
+        max_retries = 3
+        last_error = None
+        
+        for attempt in range(max_retries):
             try:
-                parsed_json = json.loads(json_str)
-            except json.JSONDecodeError as e:
-                raise ValueError(
-                    f"Invalid JSON syntax in LLM response: {str(e)}\n"
-                )
-            
-            func_discription = parsed_json['func_discription']
-            func_code = parsed_json['func_code']
-            if '```python' in func_code:
-                func_code = func_code.split('```python')[1].split('```')[0].strip()
-            elif '```' in func_code:
-                func_code = func_code.split('```')[1].split('```')[0].strip()
-            
-            print(f"  [Code Generation] Done ({len(func_code)} chars)")
-            
-            # 记录日志
-            save_workflow_log(output_dir, f'function_{current_function_id + 1}_completed', {
-                'function_id': current_function_id + 1,
-                'function_name': func_name,
-                'code_length': len(func_code)
-            })
+                if attempt == 0:
+                    print(f"  [Code Generation] Generating code for {func_name}...")
+                else:
+                    print(f"  [Code Generation] Attempt {attempt + 1}/{max_retries}: Retrying code generation for {func_name}...")
 
+                response = llm.generate(prompt)
+                 # 提取内容
+                content = response.content if hasattr(response, 'content') else str(response)
+                
+                # 直接解析代码块
+                func_code = ""
+                if '```python' in content:
+                    func_code = content.split('```python')[1].split('```')[0].strip()
+                elif '```' in content:
+                    # 尝试匹配generic block
+                    func_code = content.split('```')[1].split('```')[0].strip()
+                else:
+                    # 尝试直接匹配 def 
+                    if "def " in content:
+                         # 简单的启发式：假设从 def 开始到最后
+                         start_idx = content.find("def ")
+                         func_code = content[start_idx:].strip()
+                    else:
+                         raise ValueError(
+                            f"No valid Python code block (```python) found in LLM response. "
+                            f"Response starts with: {content[:200]}..."
+                        )
+
+                # 移除可能的 JSON包装残留 (如果模型不听话)
+                if func_code.strip().startswith('{') and '"func_code"' in func_code:
+                     try:
+                        parsed = json.loads(func_code)
+                        if 'func_code' in parsed:
+                            func_code = parsed['func_code']
+                     except:
+                        pass
+
+                
+                print(f"  [Code Generation] Done ({len(func_code)} chars)")
+                
+                # 记录日志
+                save_workflow_log(output_dir, f'function_{current_function_id + 1}_completed', {
+                    'function_id': current_function_id + 1,
+                    'function_name': func_name,
+                    'code_length': len(func_code)
+                })
+
+                
+                # 返回增量更新
+                # Determine next step
+                next_id = current_function_id + 1
+                next_action = 'integrate' if next_id >= len(function_architecture) else 'generate_next_function'
+                
+                return {
+                    'current_function_id': next_id, # Increment ID
+                    'function_codes': {func_name: func_code},
+                    'next_action': next_action,
+                }
             
-            # 返回增量更新
-            return {
-                'current_function_id': current_function_id + 1,
-                'function_descriptions': {func_name: func_discription},
-                'function_codes': {func_name: func_code},
-                'next_action': 'generate_next_function',
-            }
+            except Exception as e:
+                last_error = e
+                print(f"  [Error] Generation attempt {attempt + 1} failed: {str(e)}")
+                if attempt < max_retries - 1:
+                    continue
         
-        except Exception as e:
-            error_msg = f"Failed to generate function {func_name}: {str(e)}"
-            print(f"  [Error] {error_msg}")
-            
-            # 记录错误但继续下一个函数
-            return {
-                'current_function_id': current_function_id + 1,
-                'function_codes': {func_name: f"# Error generating function\n# {error_msg}"},
-                'next_action': 'end',
-                'errors': [error_msg],
-            }
+        error_msg = f"Failed to generate function {func_name} after {max_retries} attempts: {str(last_error)}"
+        print(f"  [Error] {error_msg}")
+        
+        # Determine next step (Skip this failure or abort? continuing for now)
+        next_id = current_function_id + 1
+        next_action = 'integrate' if next_id >= len(function_architecture) else 'generate_next_function'
+        
+        # 记录错误但继续下一个函数
+        return {
+            'current_function_id': next_id,
+            'function_codes': {func_name: f"# Error generating function\n# {error_msg}"},
+            'next_action': next_action,
+            'errors': [error_msg],
+        }
 
-# ============ 代码集成 ============
-# 追加+替换
-# def code_integration_node(state: AgentState) -> AgentState:
-#     """
-#     代码集成节点 - 将启发式函数直接集成到 ModelSolver 模板中（工具节点，不使用 LLM）
-    
-#     工作流程：
-#     1. 获取 ModelSolver 模板代码
-#     2. 获取所有已生成的启发式函数代码
-#     3. 直接通过代码逻辑将函数添加为类方法
-#     4. 在 solve() 方法中按依赖顺序调用这些函数
-#     5. 保存完整的 ModelSolver 实现
-    
-#     设计原则：
-#     - 不使用 LLM，避免长时间等待
-#     - 直接代码操作，确保集成的确定性和可靠性
-#     """
-#     output_dir = state['output_dir']
-#     current_step = state.get('current_step', 1)
-
-#     if current_step == 1: # 基于heuristic_reference_code修改
-#         heuristic_reference_code = state.get('heuristic_reference_code', '')
-#         function_architecture = state.get('function_architecture', [])
-#         function_codes = state.get('function_codes', {})
-        
-#         if not heuristic_reference_code:
-#             print("[Integration] Warning: No ModelSolver template found")
-#             return {
-#                 'next_action': 'end',
-#                 'errors': ['No template available for integration'],
-#             }
-        
-#         print(f"[Integration] Integrating {len(function_architecture)} functions into ModelSolver...")
-        
-#         # 在模板代码基础上追加
-#         final_code = integrate_functions_directly(
-#             heuristic_reference_code,
-#             function_architecture,
-#             function_codes
-#         )
-        
-#         print(f"[Integration] Integration complete ({len(final_code)} chars)")
-        
-#         # 保存最终代码
-#         algorithm_dir = ensure_algorithm_dirs(output_dir, current_step)
-#         solver_code_path = os.path.join(algorithm_dir, 'ModelSolver_final.py')
-#         os.makedirs(os.path.dirname(solver_code_path), exist_ok=True)
-        
-#         with open(solver_code_path, 'w', encoding='utf-8') as f:
-#             f.write(final_code)
-        
-#         print(f"[Integration] Saved to {solver_code_path}")
-        
-#         # 记录日志
-#         save_workflow_log(output_dir, 'integration_completed', {
-#             'function_count': len(function_architecture),
-#             'solver_path': solver_code_path,
-#             'code_length': len(final_code)
-#         })
-        
-#         # 返回增量更新
-#         return {
-#             'solver_code': final_code,
-#             'solver_code_path': solver_code_path,
-#             'next_action': 'evaluate',
-#         }
-#     else: # 基于上一步的ModelSolver_final.py修改
-#         base_code = state.get('base_code', '')
-#         function_codes = state.get('function_codes', {})
-
-#         with open(output_dir + '/algorithm/' + str(current_step-1)+'/ModelSolver_final.py', "r", encoding="utf-8") as f:
-#             base_code = f.read()
-#         for func_code in function_codes:
-#             target_function_name = func_code
-#             new_function_code = function_codes[func_code]
-#             final_code = replace_function_in_code(base_code, target_function_name, new_function_code)
-#             base_code = final_code
-#         # 保存最终代码
-#         algorithm_dir = ensure_algorithm_dirs(output_dir, current_step)
-#         solver_code_path = os.path.join(algorithm_dir, 'ModelSolver_final.py')
-#         os.makedirs(os.path.dirname(solver_code_path), exist_ok=True)
-#         with open(solver_code_path, 'w', encoding='utf-8') as f:
-#             f.write(base_code)
-#         print(f"[Integration] Saved to {solver_code_path}")
-#         # 记录日志
-#         save_workflow_log(output_dir, 'integration_completed', {
-#             'function_count': len(function_codes),
-#             'solver_path': solver_code_path,
-#             'code_length': len(base_code)
-#         })
-#         # 返回增量更新
-#         return {
-#             'solver_code': base_code,
-#             'solver_code_path': solver_code_path,
-#             'next_action': 'evaluate',
-#         }
-
-# ============ 代码集成 ============
-# 只追加    
+# ============ 代码集成 ============   
 def code_integration_node(state: AgentState) -> AgentState:
     """
     代码集成节点 - 将启发式函数直接集成到 ModelSolver 模板中（工具节点，不使用 LLM）
@@ -558,7 +417,15 @@ def code_integration_node(state: AgentState) -> AgentState:
     with open(solver_code_path, 'w', encoding='utf-8') as f:
         f.write(final_code)
     
-    print(f"[Integration] Saved to {solver_code_path}")
+    # [关键变更] 保存基因信息(Codes & Architecture)到本次迭代的目录，供MCTS后续加载
+    # 这样确保了 evolutionary lineage 的数据持久化
+    with open(os.path.join(algorithm_dir, 'function_codes.json'), 'w', encoding='utf-8') as f:
+        json.dump(function_codes, f, indent=2, ensure_ascii=False)
+        
+    with open(os.path.join(algorithm_dir, 'function_architecture.json'), 'w', encoding='utf-8') as f:
+        json.dump(function_architecture, f, indent=2, ensure_ascii=False)
+
+    print(f"[Integration] Saved solver and genetics to {algorithm_dir}")
     
     # 记录日志
     save_workflow_log(output_dir, 'integration_completed', {
@@ -573,54 +440,6 @@ def code_integration_node(state: AgentState) -> AgentState:
         'solver_code_path': solver_code_path,
         'next_action': 'evaluate',
     }
-    
-def integrate_functions_directly(
-    template_code: str,
-    function_specs: list,
-    function_codes: dict
-) -> str:
-    """
-    直接将启发式函数集成到 ModelSolver 模板中（不使用 LLM）
-    
-    集成策略：
-    1. 提取模板中的 import 语句和类定义部分
-    2. 将生成的函数作为类的方法插入到类定义中
-    3. 在 solve() 方法中按依赖顺序依次调用这些函数
-    4. 返回最终的 best_solution
-    
-    Args:
-        template_code: ModelSolver 模板代码
-        function_specs: 函数规范列表（来自架构设计）
-        function_codes: 函数代码字典 {index: code_string}
-    
-    Returns:
-        完整的 ModelSolver 代码字符串
-    """
-    # 先保留模板原样
-    new_code_lines = [template_code.rstrip(), ""]
-    
-    # 4. 添加生成的启发式函数作为类方法
-    new_code_lines.append('    # ============ Heuristic Functions ============')
-    new_code_lines.append('')
-    
-    for i, func_spec in enumerate(function_specs):
-        func_name = func_spec['name']
-        func_code = function_codes.get(func_name, f"# Function {func_spec['name']} not generated")
-        
-        new_code_lines.append(f"    # Function {i+1}: {func_name}")
-        new_code_lines.append(f"    # Role: {func_spec['strategic_role']}")
-        
-        # 处理函数代码的缩进（添加一级缩进使其成为类方法）
-        func_lines = func_code.split('\n')
-        for func_line in func_lines:
-            if func_line.strip():
-                new_code_lines.append('    ' + func_line)
-            else:
-                new_code_lines.append('')
-        
-        new_code_lines.append('')
-
-    return '\n'.join(new_code_lines)
 
 # ============ 启发式求解器评估 ============
 def heuristic_evaluation_node(state: AgentState) -> AgentState:
@@ -642,7 +461,7 @@ def heuristic_evaluation_node(state: AgentState) -> AgentState:
     solver_code_path = state.get('solver_code_path', '')
     runtime_dir = state.get('runtime_dir', '')
 
-    # solver_code_path = '/home/hyn/LLM-MM-Agent-LLMINA-clean/output/LLMINA_20260108-155345/algorithm/3/ModelSolver_final.py'
+    # solver_code_path = '/home/hyn/LLM-MM-Agent-LLMINA-clean/output/LLMINA_20260117-011108/algorithm/1/ModelSolver_final.py'
 
 
     # 临时添加 runtime_dir 到 sys.path 以确保依赖模块可以被导入
@@ -654,20 +473,25 @@ def heuristic_evaluation_node(state: AgentState) -> AgentState:
     feasibility_failed_message = None
 
     # 调用评估函数
-    try:
-        solver_class = load_solver_class_from_file(solver_code_path, "ModelSolver")    
-        evaluator = SolverEvaluation(solver_class=solver_class)    
-        success, message = evaluator.evaluate()
-        if not success:
-            # 如果 evaluate 返回 False，说明有不可行性错误
-            feasibility_failed_message = message
 
-    except Exception:
-        # 把完整 traceback 写成字符串
-        error_info = traceback.format_exc()
-        print("✗ evaluate_solver_from_file raised an exception:")
-        print(error_info)
-    
+    solver_class = load_solver_class_from_file(solver_code_path, "ModelSolver")    
+    evaluator = SolverEvaluation(solver_class=solver_class, time_limit=state.get('time_limit', 100))    
+    success, message = evaluator.evaluate()
+
+    if not success and error_info is None:
+        # 如果 evaluate 返回 False 或 抛出可行性异常   
+        if "Timeout Error" in message:
+            # 1. Infeasible -> Reflect
+            # 2. Timeout -> Reflect
+            feasibility_failed_message = message
+        elif "Feasibility Check Failed" in message:
+            feasibility_failed_message = message
+        elif "Runtime Error" in message:
+            # 3. Runtime Error -> Fix Exception
+            print(f"⚠ Evaluator reported Runtime Error.")
+            error_info = message
+        else:
+            feasibility_failed_message = message
     # 5. 判断评估是否成功
     if error_info is not None:
         # evaluate_solver_from_file 抛异常的情况
@@ -700,11 +524,11 @@ def heuristic_evaluation_node(state: AgentState) -> AgentState:
         # 构造一个特殊的质量报告供 reflect 节点使用
         infeasible_report = {
             "status": "Infeasible Solution",
-            "description": "The heuristic algorithm produced a solution that violates basic problem constraints.",
+            "description": "The heuristic algorithm produced a solution that violates basic problem constraints or could not complete within the time limit.",
             "feasibility_check_errors": feasibility_failed_message,
-            "suggestion": "Review the heuristic logic to ensure it respects In-Network Aggregation resource budgets and routing rules."
         }
         
+
         save_workflow_log(
             output_dir,
             "evaluation_failed_feasibility",
@@ -712,6 +536,7 @@ def heuristic_evaluation_node(state: AgentState) -> AgentState:
         )
 
         return {
+            "fix_attempt_count": 0,
             "quality_report": infeasible_report,
             "next_action": "reflect",
         }
@@ -735,40 +560,6 @@ def heuristic_evaluation_node(state: AgentState) -> AgentState:
         "next_action": "constraint_analyze",
     }
 
-# ============ 代码修复辅助工具 ============
-# tools for dynamic loading and evaluation                    
-def load_solver_class_from_file(file_path: str, class_name: str = "ModelSolver") -> Type:
-    file_path = Path(file_path).resolve()
-    
-    if not file_path.exists():
-        raise FileNotFoundError(f"Solver 文件不存在: {file_path}")
-    
-    # 动态加载模块
-    spec = importlib.util.spec_from_file_location("dynamic_solver_module", file_path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-
-    solver_class = getattr(module, class_name, None)
-    if solver_class is None:
-        raise AttributeError(f"模块中不存在类 '{class_name}': {file_path}")
-
-    return solver_class
-
-def extract_method_source_from_class(solver_class, method_name: str):
-    """Extract method source using inspect for precise function repair."""
-    if not solver_class or not hasattr(solver_class, method_name):
-        return None, -1, -1
-    try:
-        method_obj = getattr(solver_class, method_name)
-        source_lines, start_line = inspect.getsourcelines(method_obj)
-    except (OSError, TypeError, AttributeError) as exc:
-        print(f"[Code Fix] Warning: Unable to inspect {method_name}: {exc}")
-        return None, -1, -1
-    code = ''.join(source_lines)
-    start_idx = max(start_line - 1, 0)
-    end_idx = start_idx + len(source_lines)
-    return code, start_idx, end_idx
-
 def code_fix_node(state: AgentState) -> AgentState:
     """
     代码修复节点（非JSON版 - 直接代码生成模式）
@@ -788,7 +579,6 @@ def code_fix_node(state: AgentState) -> AgentState:
     fix_attempt_count = state.get("fix_attempt_count", 0)
     max_fix_attempts = state.get("max_fix_attempts", 3)
     function_architecture = state.get("function_architecture", [])
-    current_step = state.get("current_step", 0)
     function_codes = state.get("function_codes", {})
     heuristic_reference_code = state.get("heuristic_reference_code", "")
 
@@ -970,7 +760,7 @@ def constraint_analyzer_node(state: AgentState) -> AgentState:
             raise RuntimeError(f"Failed to load solver class: {e}")
 
         analyzer = SolutionAnalyzer(solver_class=solver_class)
-        quality_report = analyzer.run_batch_evaluation() # 获取质量报告
+        quality_report, reward = analyzer.run_batch_evaluation() # 获取质量报告
 
         # 保存报告
         algorithm_dir = ensure_algorithm_dirs(output_dir, current_step)
@@ -978,23 +768,16 @@ def constraint_analyzer_node(state: AgentState) -> AgentState:
         with open(report_path, 'w', encoding='utf-8') as f:
             json.dump(quality_report, f, indent=2, ensure_ascii=False)
 
-        # 6. 记录工作流日志
-        try:
-            save_workflow_log(
-                output_dir,
-                "constraint_analysis_completed",
-                {
-                    "solver_code": solver_code_path,
-                    "report_path": report_path
-                }
-            )
-        except Exception:
-            pass
+        print(f"[Constraint Analysis] Computed Reward: {reward}")
+
+        mcts_updates = mcts_turn_step(state, reward=reward)
         
         return {
-            "quality_report": quality_report, # 保存结构化数据
-            "next_action": "reflect",          # 下一步动作（示例）
+            "quality_report": quality_report,
+            "evaluation_results": {"evaluation_success": True}, # 标记成功
             'current_step': current_step + 1,
+            # Merge MCTS decision
+            **mcts_updates
         }
 
     except Exception as e:
@@ -1021,111 +804,611 @@ def constraint_analyzer_node(state: AgentState) -> AgentState:
             "next_action": "end", # 或者 error_recovery
         }
 
+
 def heuristic_reflect_node(state: AgentState) -> AgentState:
     """
-    启发式反思节点
+    Heuristic Reflection Node (e1 Operator)
     
-    功能：
-    1. 分析 constraint_analyzer 产生的 quality_report。
-    2. 结合 fullcode_snippet 分析瓶颈的各种代码成因。
-    3. 生成经验教训 (experience_lessons)。
-    4. 确定需要重写的函数 (function_update)。
-    5. 将经验教训追加到 state，并重置相关函数的生成状态。
+    Analyzes execution feedback and decides whether to:
+    1. Update specific function implementations (DESCRIPTION_UPDATE).
+    2. Re-Architect the solution (ARCHITECTURE_UPDATE).
     """
-    
     llm = state['llm']
-    output_dir = state['output_dir']
-    solver_code_path = state.get('solver_code_path', '')
-    
-    # 1. 获取输入数据
     problem_str = state.get('problem_str', '')
-    current_step = state.get('current_step', 1)
     function_architecture = state.get('function_architecture', [])
+    quality_report = state.get('quality_report', {})
+    experiences = state.get('experiences', [])
     
-    # 构建 func_set 供参考
-    func_set = [f['name'] for f in function_architecture]
+    # Read Result Code from Disk
+    solver_code_path = state.get('solver_code_path', '')
+    solver_code_snippet = ""
+    if solver_code_path and os.path.exists(solver_code_path):
+        try:
+             with open(solver_code_path, 'r', encoding='utf-8') as f:
+                 solver_code_snippet = f.read()
+        except Exception as e:
+             solver_code_snippet = f"Error reading code: {e}"
 
-    # 读取当前代码
-    fullcode_snippet = ""
-    try:
-        if os.path.exists(solver_code_path):
-            with open(solver_code_path, 'r', encoding='utf-8') as f:
-                fullcode_snippet = f.read()
-    except Exception as e:
-        print(f"[Heuristic Reflect] Warning: Could not read solver code from {solver_code_path}: {e}")
-
-    # 获取质量报告
-    quality_report= state.get('quality_report', {})
-
-    # 3. 构建提示词
-    # 将 JSON 数据转为格式化字符串
-    report_str = json.dumps(quality_report, indent=2) if isinstance(quality_report, (dict, list)) else str(quality_report)
+    # Pass Architecture for Strategic Review
+    func_arch_str = json.dumps(function_architecture, indent=2)
     
     prompt = HEURISTIC_REFLECT_PROMPT.format(
         problem_str=problem_str,
-        fullcode_snippet=fullcode_snippet,
-        quality_report=report_str,
-        func_set=func_set
+        function_architecture=func_arch_str,
+        solver_code_snippet=solver_code_snippet,
+        quality_report=json.dumps(quality_report, indent=2),
+        experiences="\n".join(experiences) if experiences else "None"
     )
 
-    # 4. 调用 LLM
     try:
-        print("[Heuristic Reflect] Analyzing bottlenecks and evolving strategy...")
+        print("[Reflect] Analyzing and Updating strategy...")
         response = llm.generate(prompt)
         content = response.content if hasattr(response, 'content') else str(response)
 
-        # 5. 解析 JSON
+        # JSON Extraction
         if '```json' in content:
             content = content.split('```json')[1].split('```')[0].strip()
         elif '```' in content:
-            content = content.split('```')[1].split('```')[0].strip()
+             match = re.search(r'```(?:json)?(.*?)```', content, re.DOTALL)
+             if match: content = match.group(1).strip()
+             else: content = content.split('```')[1].strip()
         
         evolution_plan = json.loads(content)
-
-        # 提取关键字段
-        experience_lessons = evolution_plan.get("experience_lessons", "No experience provided.")
-        function_update_list = evolution_plan.get("function_update", [])        
-
-        # Compute functions_to_generate list (0 for keep, 1 for rewrite)
-        # Initialize all to 0 (keep)
-        functions_to_generate = []
-        for f in function_architecture:
-            if f['name'] in function_update_list:
-                functions_to_generate.append(1)
-            else:
-                functions_to_generate.append(0)
         
-        # 保存架构设计 (虽然架构没变，但为了保持一致性或记录，可以考虑保存，或者不保存)
-        # 这里为了流程完整性，我们可以不覆盖 architectural json，除非我们改了 description
-        # 本次修改不包含 description 更新，所以不在此处写入 heuristic_architecture.json
+        # New Protocol: architecture_updates (MODIFY/ADD/DELETE actions)
+        diagnosis = evolution_plan.get("diagnosis", "Optimization based on feedback.")
+        architecture_updates = evolution_plan.get("architecture_updates", [])
+        
+        if not architecture_updates:
+            print("[Reflect] Warning: No architecture_updates found in response. Skipping reflection.")
+            return {"next_action": "end", "errors": ["No updates provided"]}
+        
+        # Apply Architecture Patches
+        current_architecture = copy.deepcopy(function_architecture)
+        functions_to_update_names = []
+        
+        # Determine dependency graph from previous state or rebuild
+        # Since we might add/remove nodes, we can rebuild it dynamically or load it
+        # For simplicity and correctness, let's load what we have and update it
+        # state.get('function_dependency_graph', {}) could be used, but let's rebuild local representation
+        
+        for update in architecture_updates:
+            action = update.get("action", "").upper()
+            func_name = update.get("function_name")
+            new_def = update.get("new_definition")
+            
+            # Robustness: If action is missing but we have new_definition, infer MODIFY/ADD
+            if not action and new_def:
+                action = "MODIFY" # Attempt modify, fallback to add inside logic
+            
+            if not func_name:
+                print(f"[Reflect] Warning: Update entry missing 'function_name'. Skipping.")
+                continue
 
-        save_workflow_log(
-                output_dir,   
-                "heuristic_reflection_completed",
-                {
-                "experience_lessons": experience_lessons,
-                "functions_to_update": function_update_list
-                }
-            )
+            if action == "MODIFY":
+                if not new_def:
+                     print(f"[Reflect] Warning: MODIFY action for '{func_name}' missing 'new_definition'.")
+                     continue
+                
+                found = False
+                for i, existing_func in enumerate(current_architecture):
+                    if existing_func['name'] == func_name:
+                        current_architecture[i] = new_def
+                        # Track the NEW name (in case of rename) to ensure generation
+                        functions_to_update_names.append(new_def['name'])
+                        found = True
+                        print(f"[Reflect] MODIFY: {func_name} -> {new_def['name']}")
+                        break
+                
+                if not found:
+                    print(f"[Reflect] Warning: Target '{func_name}' for MODIFY not found. Treating as ADD.")
+                    # Fallback to ADD logic
+                    current_architecture.append(new_def)
+                    functions_to_update_names.append(new_def['name'])
+                    print(f"[Reflect] ADD (Fallback): {new_def['name']}")
+
+            elif action == "ADD":
+                if not new_def:
+                     print(f"[Reflect] Warning: ADD action for '{func_name}' missing 'new_definition'.")
+                     continue
+                
+                # Append first, will sort later
+                current_architecture.append(new_def)
+                functions_to_update_names.append(new_def['name'])
+                print(f"[Reflect] ADD: {new_def['name']}")
+
+            elif action == "REMOVE":
+                found = False
+                for i, existing_func in enumerate(current_architecture):
+                    if existing_func['name'] == func_name:
+                        current_architecture.pop(i)
+                        found = True
+                        print(f"[Reflect] REMOVE: {func_name}")
+                        break
+                
+                if not found:
+                     print(f"[Reflect] Warning: Target '{func_name}' for REMOVE not found.")
+
+            else:
+                 print(f"[Reflect] Warning: Unknown or invalid action '{action}' for function '{func_name}'.")
+        
+        # ============ Dynamic Topological Re-Sort ============
+        print(f"[Reflect] Re-calculating dependency graph for {len(current_architecture)} functions...")
+        
+        func_map = {f['name']: f for f in current_architecture}
+        func_names = set(func_map.keys())
+        
+        dep_graph_dict = {} 
+        G = nx.DiGraph()
+        
+        # Add Nodes
+        for f in current_architecture:
+            G.add_node(f['name'])
+            
+        # Add Edges
+        for f in current_architecture:
+            f_name = f['name']
+            dependencies = f.get('dependencies', [])
+            
+            # Filter valid
+            valid_deps = [dep for dep in dependencies if dep in func_names]
+            dep_graph_dict[f_name] = valid_deps
+            
+            for dep in valid_deps:
+                G.add_edge(dep, f_name)
+        
+        # Sort
+        try:
+            sorted_names = list(nx.topological_sort(G))
+            print(f"[Reflect] Topological Sort: {sorted_names}")
+        except nx.NetworkXUnfeasible:
+            print("[Reflect] Warning: Cycle detected! Falling back to listed order.")
+            sorted_names = [f['name'] for f in current_architecture]
+            
+        new_architecture = [func_map[name] for name in sorted_names]
+        
+        if not isinstance(new_architecture, list):
+             raise ValueError("Reflection result must contain 'function_architecture' list.")
+
+        print(f"[Reflect] Diagnosis: {diagnosis}...")
+        print(f"[Reflect] Targeted Updates: {functions_to_update_names}")
+
+
+        # Targeted Generation Logic
+        funcs_to_gen = []
+        # We need to map the new architecture to generation flags
+        for func in new_architecture:
+            if func['name'] in functions_to_update_names:
+                funcs_to_gen.append(1) # Regenerate
+            else:
+                funcs_to_gen.append(0) # Keep existing (skip)
+
+        if sum(funcs_to_gen) == 0 and len(functions_to_update_names) == 0:
+             print("[Reflect] Warning: No functions marked for update. Forcing full regeneration for safety.")
+             funcs_to_gen = [1 for _ in range(len(new_architecture))]
+
+        # Prepare updates
+        updates = {
+            "infeasible_experiences": [diagnosis], # Map diagnosis to experience log
+            "function_architecture": new_architecture,
+            "function_dependency_graph": dep_graph_dict,
+            "functions_to_generate": funcs_to_gen,
+            "current_function_id": 0,
+            "next_action": "generate_next_function",
+            "fix_attempt_count": 0
+        }
+            
+        return updates
+
+    except Exception as e:
+        print(f"[Reflect] Failed: {e}")
+        return {"next_action": "end", "errors": [str(e)]}
+
+def feedback_guided_optimization_node(state: AgentState) -> AgentState:
+    """
+    Feedback-Guided Optimization Node (Advanced e1 Operator)
+    Uses performance feedback to optimize specific algorithms (Mutation).
+    """
+    llm = state['llm']
+    problem_str = state.get('problem_str', '')
+    # heuristic_reference_code is NOT used in the prompt template for this node
+    experiences = state.get('experiences', []) # Not used in prompt template
+    function_architecture = state.get('function_architecture', [])
+    quality_report = state.get('quality_report', {})
+    
+    # Read Result Code from Disk (Crucial for context)
+    solver_code_path = state.get('solver_code_path', '')
+    solver_code_snippet = ""
+    if solver_code_path and os.path.exists(solver_code_path):
+        try:
+             with open(solver_code_path, 'r', encoding='utf-8') as f:
+                 solver_code_snippet = f.read()
+        except Exception as e:
+             solver_code_snippet = f"Error reading code: {e}"
+
+    # Pass Architecture for Strategic Review
+    func_arch_str = json.dumps(function_architecture, indent=2)
+    
+    # NOTE: Prompt arguments must match FEEDBACK_GUIDED_OPTIMIZATION_PROMPT in prompt_template.py
+    prompt = FEEDBACK_GUIDED_OPTIMIZATION_PROMPT.format(
+        problem_str=problem_str,
+        solver_code_snippet=solver_code_snippet, # Changed from heuristic_reference_code
+        function_architecture=func_arch_str,
+        quality_report=json.dumps(quality_report, indent=2)
+    )
+
+    try:
+        print("[Feedback Optimization] Analyzing performance feedback for optimization...")
+        response = llm.generate(prompt)
+        content = response.content if hasattr(response, 'content') else str(response)
+
+        # JSON Extraction
+        if '```json' in content:
+            content = content.split('```json')[1].split('```')[0].strip()
+        elif '```' in content:
+             match = re.search(r'```(?:json)?(.*?)```', content, re.DOTALL)
+             if match: content = match.group(1).strip()
+             else: content = content.split('```')[1].strip()
+        
+        evolution_plan = json.loads(content)
+        
+        diagnosis = evolution_plan.get("diagnosis", "Optimization based on feedback.")
+        architecture_updates = evolution_plan.get("architecture_updates", [])
+        
+        if not architecture_updates:
+            print("[Feedback Optimization] Warning: No architecture_updates found.")
+            return {"next_action": "end", "errors": ["No updates provided"]}
+        
+        # Apply Architecture Patches
+        current_architecture = copy.deepcopy(function_architecture)
+        functions_to_update_names = []
+        
+        for update in architecture_updates:
+            action = update.get("action", "").upper()
+            func_name = update.get("function_name")
+            new_def = update.get("new_definition")
+            
+            if not action and new_def: action = "MODIFY"
+            
+            if not func_name:
+                continue
+
+            if action == "MODIFY":
+                if not new_def: continue
+                found = False
+                for i, existing_func in enumerate(current_architecture):
+                    if existing_func['name'] == func_name:
+                        current_architecture[i] = new_def
+                        functions_to_update_names.append(new_def['name'])
+                        found = True
+                        print(f"[Opt] MODIFY: {func_name} -> {new_def['name']}")
+                        break
+                if not found:
+                    # Fallback ADD
+                    current_architecture.append(new_def)
+                    functions_to_update_names.append(new_def['name'])
+                    print(f"[Opt] ADD (Fallback): {new_def['name']}")
+
+            elif action == "ADD":
+                if not new_def: continue
+                # Simply append, topological sort will handle ordering later
+                current_architecture.append(new_def)
+                functions_to_update_names.append(new_def['name'])
+                print(f"[Opt] ADD: {new_def['name']}")
+
+            elif action == "REMOVE":
+                found = False
+                for i, existing_func in enumerate(current_architecture):
+                    if existing_func['name'] == func_name:
+                        current_architecture.pop(i)
+                        found = True
+                        print(f"[Opt] REMOVE: {func_name}")
+                        break
+                if not found:
+                     print(f"[Opt] Warning: REMOVE target '{func_name}' not found.")
+
+        # ============ Dynamic Topological Re-Sort ============
+        print(f"[Opt] Re-calculating dependency graph for {len(current_architecture)} functions...")
+        
+        func_map = {f['name']: f for f in current_architecture}
+        func_names = set(func_map.keys())
+        
+        dep_graph_dict = {} 
+        G = nx.DiGraph()
+        
+        # Add Nodes
+        for f in current_architecture:
+            G.add_node(f['name'])
+            
+        # Add Edges
+        for f in current_architecture:
+            f_name = f['name']
+            dependencies = f.get('dependencies', [])
+            
+            # Filter valid
+            valid_deps = [dep for dep in dependencies if dep in func_names]
+            dep_graph_dict[f_name] = valid_deps
+            
+            for dep in valid_deps:
+                G.add_edge(dep, f_name)
+        
+        # Sort
+        try:
+            sorted_names = list(nx.topological_sort(G))
+            print(f"[Opt] Topological Sort: {sorted_names}")
+        except nx.NetworkXUnfeasible:
+            print("[Opt] Warning: Cycle detected! Falling back to listed order.")
+            sorted_names = [f['name'] for f in current_architecture]
+            
+        new_architecture = [func_map[name] for name in sorted_names]
+
+        # Generation Flags
+        funcs_to_gen = []
+        for func in new_architecture:
+            if func['name'] in functions_to_update_names:
+                funcs_to_gen.append(1)
+            else:
+                funcs_to_gen.append(0)
+
+        if sum(funcs_to_gen) == 0 and len(functions_to_update_names) == 0:
+             print("[Opt] Warning: No updates? Forcing full regen safely.")
+             funcs_to_gen = [1 for _ in range(len(new_architecture))]
 
         return {
-            "functions_to_generate": functions_to_generate,
-            "experiences": [experience_lessons], # Append to experiences list
-            
-            # 重置指针
+            "infeasible_experiences": [diagnosis],
+            "function_architecture": new_architecture,
+            "function_dependency_graph": dep_graph_dict, # Update State
+            "functions_to_generate": funcs_to_gen,
             "current_function_id": 0,
-            "fix_attempt_count": 0,
-            
-            # 下一步进入代码生成
             "next_action": "generate_next_function",
+            "fix_attempt_count": 0
         }
 
     except Exception as e:
-        error_msg = f"Reflection failed: {str(e)}"
-        print(f"✗ {error_msg}")
-        print(traceback.format_exc())
-        return {
-            "next_action": "end",
-            "errors": [error_msg],
-        }
+        print(f"[Opt] Failed: {e}")
+        return {"next_action": "end", "errors": [str(e)]}
 
+def exploratory_refactoring_node(state: AgentState) -> AgentState:
+    """
+    Exploratory Refactoring Node (Advanced e3 Operator)
+    Proposes paradigm shifts for stagnant architectures (Exploration).
+    """
+    llm = state['llm']
+    problem_str = state.get('problem_str', '')
+    heuristic_reference_code = state.get('heuristic_reference_code', '')
+    experiences = state.get('experiences', [])
+    function_architecture = state.get('function_architecture', [])
+    
+    # Prompt matches template arguments
+    prompt = EXPLORATORY_REFACTORING_PROMPT.format(
+        problem_str=problem_str,
+        heuristic_reference_code=heuristic_reference_code,
+        output_function_template=OUTPUT_FUNCTION_TEMPLATE,
+        experiences="\n".join(experiences) if experiences else "None",
+        function_architecture=json.dumps(function_architecture, indent=2)
+    )
+    
+    print("[Exploratory Refactoring] Designing RADICALLY NEW strategy...")
+    try:
+        response = llm.generate(prompt)
+        content = response.content if hasattr(response, 'content') else str(response)
+        
+        if '```json' in content:
+            content = content.split('```json')[1].split('```')[0].strip()
+        elif '```' in content:
+             match = re.search(r'```(?:json)?(.*?)```', content, re.DOTALL)
+             if match: content = match.group(1).strip()
+             else: content = content.split('```')[1].strip()
+        
+        parsed_json = json.loads(content)
+        temp_architecture = parsed_json['function_architecture']
+        strategy_overview = parsed_json.get('strategy_overview', 'Exploratory Strategy')
+        problem_analysis = parsed_json.get('problem_analysis', '')
+        
+        # ============ Topological Sort ============
+        print(f"[Exploratory Refactoring] Designing dependency graph for {len(temp_architecture)} functions...")
+        
+        func_map = {f['name']: f for f in temp_architecture}
+        func_names = set(func_map.keys())
+        
+        dep_graph_dict = {} 
+        G = nx.DiGraph()
+        
+        for f in temp_architecture:
+            G.add_node(f['name'])
+            
+        for f in temp_architecture:
+            f_name = f['name']
+            dependencies = f.get('dependencies', [])
+            valid_deps = [dep for dep in dependencies if dep in func_names]
+            dep_graph_dict[f_name] = valid_deps
+            for dep in valid_deps:
+                G.add_edge(dep, f_name)
+        
+        try:
+            sorted_names = list(nx.topological_sort(G))
+            print(f"[Exploratory Refactoring] Topological Sort: {sorted_names}")
+        except nx.NetworkXUnfeasible:
+            print("[Exploratory Refactoring] Warning: Cycle detected! Falling back.")
+            sorted_names = [f['name'] for f in temp_architecture]
+            
+        new_architecture = [func_map[name] for name in sorted_names]
+        
+        return {
+            'problem_analysis': problem_analysis,
+            'strategy_overview': strategy_overview,
+            'function_architecture': new_architecture,
+            'function_dependency_graph': dep_graph_dict, # Update State
+            'functions_to_generate': [1 for _ in range(len(new_architecture))],
+            'current_function_id': 0,
+            'next_action': 'generate_next_function',
+            'function_codes': {} # Full reset for new paradigm
+        }
+        
+    except Exception as e:
+        print(f"[Exploratory Refactoring] Failed: {e}")
+        return {"next_action": "end", "errors": [str(e)]}
+
+
+def mcts_turn_step(state: AgentState, reward: float = None) -> AgentState:
+    """
+    Executes one MCTS step: Backpropagation (optional) + Selection + Expansion.
+    Replaces the standalone mcts_management_node.
+    """
+    mcts = state.get('mcts')
+    updates = {}
+    
+    # === 1. Backpropagation ===
+    if reward is not None:
+        last_node_id = state.get('current_mcts_node_id')
+        solver_code_path = state.get('solver_code_path')
+        
+        if last_node_id and last_node_id in mcts.nodes:
+            print(f"[MCTS] Backpropagating result for Node {last_node_id} (Reward: {reward:.4f})")
+            node = mcts.nodes[last_node_id]
+            node.score = reward
+            
+            # Persist Reference (Disk-based MCTS)
+            algorithm_dir = os.path.dirname(solver_code_path) if solver_code_path else ""
+            node.config = {
+                'algorithm_dir': algorithm_dir, 
+                'score': reward
+            }
+            mcts.backpropagate(node)
+            # Log update is printed by backprop usually, or we can print here
+            print(f"[MCTS] Node {node.node_id} Updated. Q: {node.Q:.4f}, Visits: {node.visits}")
+    
+    # === 2. Selection & Expansion ===
+    init_pop_size = state.get('init_pop_size', 2)
+    valid_root_children = [c for c in mcts.root.children if c.visits > 0]
+    current_pop_size = len(valid_root_children)
+    
+    print(f"[MCTS] Population Size: {current_pop_size}/{init_pop_size}")
+    
+    operator = "i1"
+    parent_a = None
+    parent_b = None
+    selected_node = None
+
+    if current_pop_size < init_pop_size:
+        # Phase: Initialization
+            operator = "i1"
+            selected_node = mcts.root
+            print(f"[MCTS] Phase: Init ({current_pop_size+1}/{init_pop_size}) - Operator: i1 (Genesis)")
+    else:
+        # Phase: Evolution
+        selected_node = mcts.select()
+        if selected_node.description == "Root":
+            operator = "i1"
+            print("[MCTS] Phase: Evolution - Root Selected (Reset)")
+        else:
+            choice = random.random()
+            if choice < 0.50:
+                operator = "e1"
+                print(f"[MCTS] Operator: e1 (Mutation) on {selected_node.node_id}")
+            elif choice < 0.90:
+                operator = "e3"
+                print(f"[MCTS] Operator: e3 (Exploration) on {selected_node.node_id}")
+            else:
+                 operator = "i1"
+                 print("[MCTS] Operator: i1 (Exploration Restart)")
+
+    if parent_a is None:
+        parent_a = selected_node
+
+    # 3. Create Child Node (for the NEXT step)
+    current_step = state.get('current_step', 1)
+    new_node_id = str(current_step + 1) # Next Step ID
+    
+    new_node = MCTSNode(
+        description=f"Pending Eval ({operator})",
+        operator=operator,
+        node_id=new_node_id
+    )
+    mcts.register_node(new_node)
+    
+    new_node.parent = parent_a
+    parent_a.children.append(new_node) # Tree Link
+
+    # 4. Determine Next Route
+    # We map operators to the specific graph node names
+    next_action_map = {
+        "i1": "initialization",
+        "e1": "optimization",
+        "e3": "refactoring",
+    }
+    next_node = next_action_map.get(operator, "initialization")
+    
+    # Helper to load config
+    def load_node_config(n):
+        if not n or not n.config: return {}
+        if 'function_codes' in n.config: return n.config # Memory fallback
+        algo_dir = n.config.get('algorithm_dir')
+        if not algo_dir or not os.path.exists(algo_dir): return {}
+        
+        cfg = {}
+        try:
+            # Load Arch
+            p_arch = os.path.join(algo_dir, 'function_architecture.json')
+            if os.path.exists(p_arch):
+                with open(p_arch, 'r', encoding='utf-8') as f:
+                    cfg['function_architecture'] = json.load(f)
+            # Load Codes
+            p_code = os.path.join(algo_dir, 'function_codes.json')
+            if os.path.exists(p_code):
+                with open(p_code, 'r', encoding='utf-8') as f:
+                    cfg['function_codes'] = json.load(f)
+            
+            # Load Solver Code Path
+            p_solver = os.path.join(algo_dir, 'ModelSolver_final.py')
+            if os.path.exists(p_solver):
+                cfg['solver_code_path'] = p_solver
+
+            # Load Quality Report
+            p_report = os.path.join(algo_dir, 'quality_report.json')
+            if os.path.exists(p_report):
+                with open(p_report, 'r', encoding='utf-8') as f:
+                    cfg['quality_report'] = json.load(f)
+
+            return cfg
+        except Exception:
+            return {}
+    
+    parent_a_config = load_node_config(parent_a)
+    parent_b_config = load_node_config(parent_b)
+
+    # Prepare Updates
+    updates.update({
+        'mcts': mcts,
+        'current_mcts_node_id': new_node_id,
+        'mcts_operator': operator,
+        'next_action_node': next_node,
+        'parent_a_config': parent_a_config,
+        'parent_b_config': parent_b_config
+    })
+    
+    # State Inheritance Logic
+    if operator in ['e1', 'e3']:
+        updates['function_architecture'] = parent_a_config.get('function_architecture')
+        f_codes = parent_a_config.get('function_codes')
+        if f_codes:
+            updates['function_codes'] = f_codes
+        
+        # Inherit Solver Code Path for Context
+        solver_path = parent_a_config.get('solver_code_path')
+        if solver_path:
+            updates['solver_code_path'] = solver_path
+        
+        # Inherit Quality Report for Context
+        q_report = parent_a_config.get('quality_report')
+        if q_report:
+            updates['quality_report'] = q_report
+            
+    elif operator == 'i1':
+        # Clear codes for fresh start.  
+        # Architecture will be designed in heuristic_initialization_node.
+        updates['function_codes'] = {} 
+        updates['current_function_id'] = 0
+        updates['functions_to_generate'] = [] # Reset, will be filled by initialization node
+
+    return updates

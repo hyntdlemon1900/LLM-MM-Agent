@@ -11,7 +11,7 @@ class RelaxSolve:
         self.ina_num = ina_num
         self.jobs_num = jobs_num
         self.Cs = Cs
-        self.Ps = 200 # Ps处的端口带宽单独定义
+        self.Ps = network.basic_band # Ps处的端口带宽单独定义
         self.network = network
 
         self.base_num = network.hosts_num

@@ -7,7 +7,6 @@ from .state import AgentState, create_agent_state
 from .graph import build_workflow
 from .nodes import (
     load_problem_node,
-    heuristic_architect_node,
     function_code_generator_node,
     code_integration_node,
     heuristic_evaluation_node,

@@ -75,7 +75,6 @@ from MMBench.problem.LLMINA.runtime.topo import FatTree, SpineLeaf
 ina_num = 5
 jobs_num = 5
 Cs = 750.0
-Ps = 200.0
 instance_num = 1
 k = 4  # FatTree 参数
 tops_num = 5

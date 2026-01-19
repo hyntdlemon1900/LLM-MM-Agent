@@ -1,0 +1,250 @@
+[
+  {
+    "name": "_estimate_switch_loads",
+    "strategic_role": "Computes the expected total data rate a switch would process if used as an INA node for all jobs.",
+    "function_descriptions": "1. Initialize `self.switch_load_estimate` = {s: 0.0 for s in self.ina_candidates}. 2. For each job j in range(self.jobs_num): 3.   For each worker w in self.workers_id[j]: 4.     Compute the shortest path from worker w to the PS d_j using self._get_path_links. 5.     For each link e in this path: 6.       Identify all switches s in the path that are in self.ina_candidates. 7.       If s exists, add job j's data volume (self.jobs_size[j]) to self.switch_load_estimate[s]. 8.   End loop over workers. 9. End loop over jobs. 10. Return nothing (stores result in self).",
+    "inputs": [],
+    "outputs": [],
+    "member_variables_read": [
+      {
+        "name": "self.ina_candidates",
+        "type": "List[int]",
+        "description": "List of switch IDs eligible for INA placement."
+      },
+      {
+        "name": "self.workers_id",
+        "type": "List[List[int]]",
+        "description": "Nested list: worker node IDs per job."
+      },
+      {
+        "name": "self.ps_id",
+        "type": "List[int]",
+        "description": "List of PS node IDs per job."
+      },
+      {
+        "name": "self.jobs_size",
+        "type": "List[float]",
+        "description": "Gradient volume per job per iteration (Gbits)."
+      },
+      {
+        "name": "self._get_path_links",
+        "type": "Callable",
+        "description": "Helper to retrieve edge list for shortest path."
+      }
+    ],
+    "member_variables_written": [
+      {
+        "name": "self.switch_load_estimate",
+        "type": "Dict[int, float]",
+        "description": "Maps each candidate switch to its estimated total incoming data rate (Gbps) if used as INA."
+      }
+    ],
+    "dependencies": []
+  },
+  {
+    "name": "_select_top_n_candidates",
+    "strategic_role": "Selects the most beneficial INA switches based on estimated load, subject to budget constraint.",
+    "function_descriptions": "1. Initialize `candidate_scores` = []. 2. For each switch s in self.ina_candidates: 3.   Append (s, self.switch_load_estimate[s]) to candidate_scores. 4. Sort candidate_scores by score (descending). 5. Take the top min(len(candidate_scores), self.ina_budget) entries. 6. Initialize `selected_switches` = [s for s, _ in candidate_scores[:self.ina_budget]]. 7. Sort selected_switches in ascending order (deterministic output). 8. Store result in `self.ina_placement_switches` = selected_switches. 9. Return nothing.",
+    "inputs": [],
+    "outputs": [],
+    "member_variables_read": [
+      {
+        "name": "self.ina_candidates",
+        "type": "List[int]",
+        "description": "Eligible switch candidates for INA."
+      },
+      {
+        "name": "self.switch_load_estimate",
+        "type": "Dict[int, float]",
+        "description": "Estimated traffic load per switch if used as INA."
+      },
+      {
+        "name": "self.ina_budget",
+        "type": "int",
+        "description": "Maximum number of switches that can be enabled with INA."
+      }
+    ],
+    "member_variables_written": [
+      {
+        "name": "self.ina_placement_switches",
+        "type": "List[int]",
+        "description": "Final list of selected INA-enabled switches."
+      }
+    ],
+    "dependencies": []
+  },
+  {
+    "name": "_compute_worker_assignment_costs",
+    "strategic_role": "Calculates the cost (rate) of assigning each worker to each possible aggregation point (INA switch or PS), factoring in path length and congestion risk.",
+    "function_descriptions": "1. Initialize `self.assignment_costs` = {j: {w: {} for w in range(len(self.workers_id[j]))} for j in range(self.jobs_num)}. 2. For each job j in range(self.jobs_num): 3.   For each worker w in range(len(self.workers_id[j])): 4.     Let worker_node = self.workers_id[j][w]. 5.     Let ps_node = self.ps_id[j]. 6.     For each aggregation candidate v in (self.ina_placement_switches + [ps_node]): 7.       If v is in self.ina_placement_switches, check that v is in self.ina_candidates and x_s = 1 (via self.ina_placement_switches). 8.       Compute the shortest path from worker_node to v using self._get_path_links. 9.       For each link e in the path: 10.         If link e already has high load (e.g., exceeds 80% of C_e), increase cost by 1.0. 11.       Compute the total path length (number of hops) as a proxy for delay. 12.       Let base_rate = self.jobs_size[j] / (1.0 + path_hops)  // 13.       Set cost = base_rate + penalty for congested links. 13.       Store self.assignment_costs[j][w][v] = cost. 14.     End loop over v. 15.   End loop over w. 16. End loop over j. 17. Return nothing.",
+    "inputs": [],
+    "outputs": [],
+    "member_variables_read": [
+      {
+        "name": "self.workers_id",
+        "type": "List[List[int]]",
+        "description": "Worker node IDs per job."
+      },
+      {
+        "name": "self.ps_id",
+        "type": "List[int]",
+        "description": "PS node ID per job."
+      },
+      {
+        "name": "self.jobs_size",
+        "type": "List[float]",
+        "description": "Gradient volume per job."
+      },
+      {
+        "name": "self.ina_placement_switches",
+        "type": "List[int]",
+        "description": "List of selected INA-enabled switches."
+      },
+      {
+        "name": "self._get_path_links",
+        "type": "Callable",
+        "description": "Function to retrieve shortest path edges."
+      },
+      {
+        "name": "self.base_bw",
+        "type": "float",
+        "description": "Link bandwidth (Gbps)."
+      },
+      {
+        "name": "self.bandwidth_mapping",
+        "type": "Dict[Tuple[int, int], float]",
+        "description": "Map of link (u,v) to bandwidth."
+      }
+    ],
+    "member_variables_written": [
+      {
+        "name": "self.assignment_costs",
+        "type": "Dict[int, Dict[int, Dict[int, float]]]",
+        "description": "Maps job j, worker w, and agg node v to an assignment cost."
+      }
+    ],
+    "dependencies": [
+      "_get_path_links"
+    ]
+  },
+  {
+    "name": "_assign_workers_to_aggregators",
+    "strategic_role": "Assigns each worker to the aggregation node with the lowest cost, while ensuring single assignment and INA dependency constraints.",
+    "function_descriptions": "1. Initialize `self.worker_agg_id` = [[] for _ in range(self.jobs_num)]. 2. For each job j in range(self.jobs_num): 3.   For each worker w in range(len(self.workers_id[j])): 4.     Let candidate_nodes = self.ina_placement_switches + [self.ps_id[j]]. 5.     Filter candidates to include only those where self.ina_placement_switches contains v (if v is a switch). 6.     From the filtered list, find the node v with minimum self.assignment_costs[j][w][v]. 7.     Append v to self.worker_agg_id[j]. 8.   End loop over w. 9. End loop over j. 10. Return nothing.",
+    "inputs": [],
+    "outputs": [],
+    "member_variables_read": [
+      {
+        "name": "self.assignment_costs",
+        "type": "Dict[int, Dict[int, Dict[int, float]]]",
+        "description": "Precomputed costs for each worker-aggregator pair."
+      },
+      {
+        "name": "self.ina_placement_switches",
+        "type": "List[int]",
+        "description": "List of switches enabled with INA."
+      },
+      {
+        "name": "self.ps_id",
+        "type": "List[int]",
+        "description": "PS node ID per job."
+      },
+      {
+        "name": "self.workers_id",
+        "type": "List[List[int]]",
+        "description": "Worker node IDs per job."
+      }
+    ],
+    "member_variables_written": [
+      {
+        "name": "self.worker_agg_id",
+        "type": "List[List[int]]",
+        "description": "Final worker-to-aggregation-node assignment map."
+      }
+    ],
+    "dependencies": []
+  },
+  {
+    "name": "_refine_solution",
+    "strategic_role": "Implements a local search to improve makespan by swapping INA placements and reassigning workers, using the oracle `get_makespan()` for feedback.",
+    "function_descriptions": "1. Initialize `best_makespan` = float('inf'), `best_placement` = self.ina_placement_switches[:], `best_assignment` = [row[:] for row in self.worker_agg_id]. 2. For each candidate switch s not in self.ina_placement_switches (i.e., unused in current placement): 3.   For each switch t in self.ina_placement_switches: 4.     Let temp_placement = [x for x in self.ina_placement_switches if x != t] + [s]  // swap t with s 5.     If len(temp_placement) != len(self.ina_placement_switches), skip. 6.     Call (makespan, _) = self.get_makespan(temp_placement, self.worker_agg_id). 7.     If makespan < best_makespan: 8.       Update best_makespan = makespan, best_placement = temp_placement, best_assignment = [row[:] for row in self.worker_agg_id]. 9.   End loop over t. 10. End loop over s. 11. If best_makespan < float('inf'): 12.   Set self.ina_placement_switches = best_placement 13.   Set self.worker_agg_id = best_assignment 14.   Return True. 15. Return False.",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "refined",
+        "type": "bool",
+        "description": "True if the solution was improved, False otherwise."
+      }
+    ],
+    "member_variables_read": [
+      {
+        "name": "self.ina_placement_switches",
+        "type": "List[int]",
+        "description": "Current INA placement."
+      },
+      {
+        "name": "self.worker_agg_id",
+        "type": "List[List[int]]",
+        "description": "Current worker assignments."
+      },
+      {
+        "name": "self.get_makespan",
+        "type": "Callable",
+        "description": "Oracle function to compute makespan for a given configuration."
+      },
+      {
+        "name": "self.ina_budget",
+        "type": "int",
+        "description": "Maximum allowed INA switches."
+      },
+      {
+        "name": "self.ina_candidates",
+        "type": "List[int]",
+        "description": "All eligible candidate switches for INA."
+      }
+    ],
+    "member_variables_written": [
+      {
+        "name": "self.ina_placement_switches",
+        "type": "List[int]",
+        "description": "Updated INA placement after refinement."
+      },
+      {
+        "name": "self.worker_agg_id",
+        "type": "List[List[int]]",
+        "description": "Updated worker assignment after refinement."
+      }
+    ],
+    "dependencies": [
+      "get_makespan"
+    ]
+  },
+  {
+    "name": "solve_with_heuristic",
+    "strategic_role": "Orchestrator: Main driver of the algorithm.",
+    "function_descriptions": "Step 1. Call _init_state to initialize internal variables. Step 2. Call _estimate_switch_loads to compute expected load per switch. Step 3. Call _select_top_n_candidates to select up to B_INA switches based on load. Step 4. Call _compute_worker_assignment_costs to build cost matrix for assignments. Step 5. Call _assign_workers_to_aggregators to assign workers to optimal aggregation points. Step 6. Call _refine_solution to perform a local search over placements and assignments for improved makespan. Step 7. Construct the final solution dictionary in self.solution with 'ina_placement_switches' and 'worker_agg_id'. Step 8. Return self.solution.",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "solution",
+        "type": "Optional[Dict[str, Any]]",
+        "description": "Final solution object containing INA placement and worker assignments."
+      }
+    ],
+    "member_variables_read": [],
+    "member_variables_written": [
+      {
+        "name": "self.solution",
+        "type": "Dict[str, Any]",
+        "description": "Final output stored in the solver instance."
+      }
+    ],
+    "dependencies": [
+      "_estimate_switch_loads",
+      "_select_top_n_candidates",
+      "_compute_worker_assignment_costs",
+      "_assign_workers_to_aggregators",
+      "_refine_solution"
+    ]
+  }
+]

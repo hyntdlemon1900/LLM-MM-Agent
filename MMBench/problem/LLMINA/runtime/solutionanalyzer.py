@@ -85,8 +85,9 @@ class SolutionAnalyzer:
         jobs_num_list = [5]
         # Cs_list = [750.0]
         Cs = 750.0
-        Ps = 200.0
-        instance_num = 5
+        # instance_num = 5
+        instance_num = 1
+        score_list = []
 
         # 结果容器
         report = {
@@ -94,7 +95,6 @@ class SolutionAnalyzer:
             "evaluation_scenarios": [],
             "hardware_capability": {
                 "switch_processing_power": f"{Cs} Gbps (Standard Programmable Switch)",
-                "server_uplink_capacity": f"{Ps} Gbps (High-Performance NIC for PS)"
             },
         }
 
@@ -113,7 +113,7 @@ class SolutionAnalyzer:
                             ina_budget=ina_budget,
                             jobs_num=jobs_num,
                             Cs=Cs,
-                            Ps=Ps,
+                            base_bw=self.basic_band,
                             topo_name=self.topo_name
                         )
                         # 2. 求解
@@ -121,10 +121,10 @@ class SolutionAnalyzer:
                         # 3. 构造 Base Solver 进行对比分析
                         base_solver = RelaxSolve(ina_budget, jobs_num, Cs, self.network, instance)
                         # 4. 对该 Solver 实例进行独立分析
-                        analysis_result = self._analyze_single_instance(solver, base_solver)
-                        
+                        analysis_result, score = self._analyze_single_instance(solver, base_solver)
+                        score_list.append(score)
                         report["evaluation_scenarios"].append(analysis_result)
-        return report
+        return report, -sum(score_list) / len(score_list)
 
     def _analyze_single_instance(self, solver: ModelSolver, base_solver) -> Dict[str, Any]:
         """
@@ -132,8 +132,6 @@ class SolutionAnalyzer:
         """
         ina_budget = solver.problem_data["ina_budget"]
         jobs_num = solver.problem_data["jobs_num"]
-        Cs = solver.problem_data["Cs"]
-        Ps = solver.problem_data["Ps"]
 
         # 确保 LP 子问题已求解 (获取连续变量)
         if solver.solution is None:
@@ -148,7 +146,7 @@ class SolutionAnalyzer:
         }
 
         # 获取评估算法的makespan
-        makespan = solver.get_makespan(solver.solution["ina_placement_switches"], solver.solution["worker_agg_id"])
+        makespan, gamma_j_values = solver.get_makespan(solver.solution["ina_placement_switches"], solver.solution["worker_agg_id"])
         # 获取对比算法的makespan
         base_Makespan = base_solver.base_solve()
 
@@ -179,7 +177,7 @@ class SolutionAnalyzer:
             },
             "critical_issues_found": semantic_bottlenecks,
             "resource_utilization_report": semantic_ina_usage + semantic_ps_usage
-        }
+        }, makespan/base_Makespan
 
     def _detect_switch_usage(self, solver: ModelSolver, model: pyo.ConcreteModel, switch_usage) -> List[Dict[str, Any]]:
         # 3. 扫描 INA 计算约束 (INA Capacity)
@@ -573,7 +571,6 @@ class SolutionAnalyzer:
             return usage
 
         all_ps_usage = []
-        # Ps = float(solver.problem_data["Ps"])
 
         # 遍历所有 PS (从 problem_data 中获取)
         all_ps_ids = set()

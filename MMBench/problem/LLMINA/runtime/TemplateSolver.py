@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import Dict, Any, List, Optional, Tuple
 import pyomo.environ as pyo
 from pyomo.opt import SolverFactory, TerminationCondition
-from .BaseTemplateSolver import BaseTemplateSolver
+from ...problem_template.runtime.BaseTemplateSolver import BaseTemplateSolver
 from abc import ABC, abstractmethod
 import inspect
 
@@ -41,26 +41,6 @@ class TemplateSolver(BaseTemplateSolver):
         super().__init__(problem_data)
         self.model = None
                
-    # def build_model(self):
-    #     """
-    #     构建Pyomo优化模型（抽象方法，子类必须重写）
-        
-    #     子类应在此方法中：
-    #     1. 调用 self._preprocess_data() 进行数据预处理（可选）
-    #     2. 创建 pyo.ConcreteModel 实例
-    #     3. 定义集合（Sets）、变量（Vars）、目标函数（Objective）、约束（Constraints）
-    #     4. 将模型赋值给 self.model
-        
-    #     示例：
-    #         model = pyo.ConcreteModel()
-    #         model.I = pyo.RangeSet(0, n-1)
-    #         model.x = pyo.Var(model.I, domain=pyo.Binary)
-    #         model.obj = pyo.Objective(expr=..., sense=pyo.minimize)
-    #         model.constraint = pyo.Constraint(model.I, rule=...)
-    #         self.model = model
-    #     """
-    #     raise NotImplementedError("子类必须实现 build_model() 方法")
-    
     def _solve_with_pyomo_core(
         self,
         solver_name: str = 'gurobi',
@@ -96,7 +76,6 @@ class TemplateSolver(BaseTemplateSolver):
         success = self._check_solution_status()
 
         return success
-        
         
     def _configure_solver_options(self, solver):
         """配置求解器参数"""
@@ -189,18 +168,23 @@ class TemplateSolver(BaseTemplateSolver):
             "Budget Violated": [],
             "Invalid Placement": [],
             "Incomplete Routing": [],
-            "Invalid Routing Target": []
+            "Invalid Routing Target": [],
+            "Data Format Error": []
         }
 
         # ---------------------------------------------------------------------
         # 1. Check INA Deployment Budget
         # ---------------------------------------------------------------------
         ina_switches = self.solution.get("ina_placement_switches", [])
-        distinct_ina_switches = set(ina_switches) # Deduplicate just in case
+        if ina_switches is None:
+            errors_by_category["Data Format Error"].append("Critical: self.solution['ina_placement_switches'] is None. It MUST be a List[int].")
+            distinct_ina_switches = set()
+        else:
+            distinct_ina_switches = set(ina_switches) # Deduplicate just in case
         
         if len(distinct_ina_switches) > self.ina_budget:
             errors_by_category["Budget Violated"].append(
-                f"Deployed on {len(distinct_ina_switches)} switches, limit is {self.ina_budget}."
+                f"INA Placement Violation: You selected {len(distinct_ina_switches)} switches, but the budget allows at most {self.ina_budget}."
             )
 
         # (Optional) Validate that deployed switches are physically capable candidates
@@ -208,18 +192,26 @@ class TemplateSolver(BaseTemplateSolver):
         invalid_deployments = [s for s in distinct_ina_switches if s not in valid_candidates_set]
         if invalid_deployments:
             errors_by_category["Invalid Placement"].append(
-                f"Switches {invalid_deployments} are not valid candidates."
+                f"Invalid INA Candidate: Switches {invalid_deployments} are not in the valid candidate set."
             )
 
         # ---------------------------------------------------------------------
         # 2. Check Routing Logic (Worker Assignments)
         # ---------------------------------------------------------------------
-        worker_agg_id = self.solution.get("worker_agg_id", {})
-        
+        # Standard: List[List[int]].
+        worker_agg_id = self.solution.get("worker_agg_id", [])
+        if worker_agg_id is None:
+            errors_by_category["Data Format Error"].append("Critical: self.solution['worker_agg_id'] is None. It MUST be a List[List[int]].")
+            return False, errors_by_category
+
+        if not isinstance(worker_agg_id, list):
+             errors_by_category["Data Format Error"].append("Critical: self.solution['worker_agg_id'] MUST be a List[List[int]], but got something else.")
+             return False, errors_by_category
+
         for j in range(self.jobs_num):
             # A. Check Job Existence in Solution
-            if j not in worker_agg_id:
-                errors_by_category["Incomplete Routing"].append(f"Job {j} missing.")
+            if j >= len(worker_agg_id):
+                errors_by_category["Incomplete Routing"].append(f"Job {j} is missing from 'worker_agg_id' (List index out of range).")
                 continue
             
             job_assignments = worker_agg_id[j]
@@ -229,16 +221,16 @@ class TemplateSolver(BaseTemplateSolver):
             # B. Check Worker Coverage
             if len(job_assignments) != num_workers:
                 errors_by_category["Incomplete Routing"].append(
-                    f"Job {j} expected {num_workers} workers, found {len(job_assignments)}."
+                    f"Job ID {j} Assignment Count Mismatch: Expected assignments for {num_workers} workers, but found {len(job_assignments)} assignments."
                 )
             
             for w_idx in range(num_workers):
-                if isinstance(job_assignments, dict) and w_idx not in job_assignments:
-                     errors_by_category["Incomplete Routing"].append(f"Job {j}, Worker {w_idx} missing.")
+                # Retrieve assigned aggregation node safely
+                try:
+                    agg_node = job_assignments[w_idx]
+                except (IndexError, TypeError):
+                     errors_by_category["Incomplete Routing"].append(f"Job ID {j}, Worker ID {w_idx} assignment is missing.")
                      continue
-                
-                # Retrieve assigned aggregation node
-                agg_node = job_assignments[w_idx]
                 
                 # -----------------------------------------------------------------
                 # 3. Check Aggregation Point Validity
@@ -248,7 +240,7 @@ class TemplateSolver(BaseTemplateSolver):
                 
                 if not (is_direct_to_ps or is_via_ina_switch):
                     errors_by_category["Invalid Routing Target"].append(
-                        f"Job {j} Worker {w_idx} -> Node {agg_node} (Not PS {job_ps} or INA Switch)."
+                        f"Job ID {j} Worker ID {w_idx} assigned to Node ID {agg_node}, which is neither the Job PS (Node ID {job_ps}) nor any selected INA switch."
                     )
         
         # Filter empty categories
@@ -259,6 +251,30 @@ class TemplateSolver(BaseTemplateSolver):
         else:
             return False, final_errors
 
+    def _get_flows_on_link(
+        self,
+        edge: Tuple[int, int],
+        src_set: List[int],
+        dst_set: List[int]
+    ) -> List[Tuple[int, int]]:
+        """
+        Identifies which flows (src_idx -> dst_idx) traverse the given edge.
+        Used to construct Link Bandwidth Constraints.
+        
+        Returns:
+            List of (src_index, dst_index) tuples.
+        """
+        flows = []
+        edge_rev = (edge[1], edge[0])
+        
+        for s_idx, s_node in enumerate(src_set):
+            for d_idx, d_node in enumerate(dst_set):
+                path_edges = self._get_path_links(s_node, d_node)
+                # Check if the edge (or its reverse) is part of the flow's path
+                if edge in path_edges or edge_rev in path_edges:
+                    flows.append((s_idx, d_idx))
+        return flows
+    
     def build_model(self) -> None:
         """
         Build the full Pyomo MILP model for the LLMINA problem.
@@ -308,8 +324,15 @@ class TemplateSolver(BaseTemplateSolver):
         ps_id = self.problem_data["instance"]["ps_id"]
         ina_budget= self.problem_data["ina_budget"]
         Cs = self.problem_data["Cs"]
-        Ps = self.problem_data["Ps"]
+        Ps = self.problem_data["network"].basic_band
 
+        self.sd_id: List[int] = []
+        for j in range(self.jobs_num):
+            ps_node = self.ps_id[j]
+            neighbors = list(self.G.neighbors(ps_node))
+            if not neighbors:
+                raise ValueError(f"PS node {ps_node} is isolated!")
+            self.sd_id.append(neighbors[0]) # The unique ToR switch for this PS
         model = pyo.ConcreteModel(name="LLMINA_INA_Placement_and_Routing")
 
         # ----- Sets -----
@@ -600,20 +623,29 @@ class TemplateSolver(BaseTemplateSolver):
         ps_id = self.problem_data["instance"]["ps_id"]
 
         # worker_agg_id[j][w] is the node ID of the aggregation point for worker w of job j.
-        worker_agg_id: Dict[int, Dict[int, int]] = {j: {} for j in range(jobs_num)}
+        # Structure: List[List[int]] (Consistent with OUTPUT_FUNCTION_TEMPLATE)
+        worker_agg_id: List[List[int]] = []
 
         for j in range(jobs_num):
+            job_assignments = []
             for w in range(workers_num[j]):
                 if pyo.value(m.y_jwd[j, w]) > 0.5:
                     # Worker sends directly to PS.
-                    worker_agg_id[j][w] = ps_id[j]
+                    job_assignments.append(ps_id[j])
                 else:
                     # Find the INA s with y_jws[j, w, s] = 1.
-                    s_idx = next(
-                        s for s in range(self.ina_candidates_num)
-                        if pyo.value(m.y_jws[j, w, s]) > 0.5
-                    )
-                    worker_agg_id[j][w] = self.ina_candidates[s_idx]
+                    found_s = -1
+                    for s in range(self.ina_candidates_num):
+                        if pyo.value(m.y_jws[j, w, s]) > 0.5:
+                            found_s = self.ina_candidates[s]
+                            break
+                    
+                    if found_s == -1:
+                        # Should not happen in a valid solution, but as a fallback
+                        found_s = ps_id[j] 
+                    
+                    job_assignments.append(found_s)
+            worker_agg_id.append(job_assignments)
 
         self.worker_agg_id = worker_agg_id
         self.solution = {
@@ -622,7 +654,7 @@ class TemplateSolver(BaseTemplateSolver):
         }
         return self.solution
 
-    def get_makespan(self, ina_placement_switches, worker_agg_id) -> Optional[float]:
+    def get_makespan(self, ina_placement_switches, worker_agg_id) -> Tuple[float, Dict[int, float]]:
         """
         Compute makespan for a given discrete decision (INA placement and worker assignments).
 
@@ -630,12 +662,41 @@ class TemplateSolver(BaseTemplateSolver):
             1) Unfix any previous binary decisions.
             2) Fix x_s and y_jws/y_jwd according to the given deployment and assignments.
             3) Resolve the resulting LP to optimize continuous rate variables and compute makespan.
-            4) Return makespan = 1 / alpha (or None if unsolved or invalid).
+            4) Return makespan = 1 / alpha.
+
+        Args:
+            ina_placement_switches (List[int]): List of deployed INA switch IDs.
+            worker_agg_id (List[List[int]]): 
+                Assignments mapping Job -> Worker -> Aggregation Node ID.
+        
+        Raises:
+            ValueError: If the configuration is infeasible (structure check).
+            RuntimeError: If the LP solver fails or returns an invalid makespan.
 
         This function assumes self.build_model() has been called at least once.
         """
         if self.model is None:
             self.build_model()
+
+        # Update self.solution to check feasibility
+        self.solution = {
+            "ina_placement_switches": ina_placement_switches,
+            "worker_agg_id": worker_agg_id,
+        }
+        
+        is_feasible, errors = self.check_feasibility()
+        
+        if not is_feasible:
+             final_msg_lines = ["Feasibility Check Failed. Failed to retrieve makespan."]
+             for cat, msgs in errors.items():
+                 final_msg_lines.append(f"[{cat}]: {len(msgs)} issues.")
+                 # Show top 3 unique errors
+                 for m in msgs[:3]:
+                     final_msg_lines.append(f"    - {m}")
+                 if len(msgs) > 3:
+                     final_msg_lines.append(f"    - ... and {len(msgs)-3} more similar errors.")
+             
+             raise ValueError("\n".join(final_msg_lines))
 
         m = self.model
         jobs_num = self.problem_data["jobs_num"]
@@ -695,12 +756,41 @@ class TemplateSolver(BaseTemplateSolver):
             verbose=True,
         )
         if not solved:
-            return None
+            raise RuntimeError("LP Solver failed to find an optimal solution (Solver Status check failed).")
 
         alpha_value = pyo.value(m.alpha)
-        if alpha_value is None or alpha_value <= 0:
-            return None
+        if alpha_value is None or alpha_value <= 1e-9:
+            raise RuntimeError(f"Invalid alpha value derived: {alpha_value}. The model might be infeasible or unbounded.")
 
         # Update model with the latest solution and return the implied makespan.
         self.model = m
-        return 1.0 / alpha_value
+        
+        gamma_j_values = {j: pyo.value(m.gamma_j[j]) for j in m.J}
+        makespan = 1.0 / alpha_value
+
+        return makespan, gamma_j_values
+
+OUTPUT_FUNCTION_TEMPLATE = """
+    def solve_with_heuristic(self) -> Optional[Dict[str, Any]]:
+        '''
+        to be implemented below: solve the MILP model with heuristic methods
+        '''         
+        # Initialize the solution structure
+        self.solution = {
+            # 1. INA Placement (The "Where")
+            # A simple list of Switch IDs selected for INA.
+            "ina_placement_switches": [], 
+            
+            # 2. Worker Routing (The "How")
+            # A Nested List (Jagged Array) mirroring the structure of `self.workers_id`.
+            # Rule: self.worker_agg_id[j][w] is the target node for self.workers_id[j][w].
+            #
+            # Structure: List[List[int]]
+            #   - Outer List: Corresponds to each Job (Index j)
+            #   - Inner List: Corresponds to each Worker in that Job (Index w) in strict order.
+            #   - Value: The integer Node ID of the chosen aggregation switch (or PS).
+            "worker_agg_id": [] 
+        }
+        
+        return self.solution
+"""

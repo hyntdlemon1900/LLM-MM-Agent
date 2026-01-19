@@ -1,0 +1,111 @@
+{
+  "topology_context": {
+    "network_architecture": "3-Tier FatTree Topology (Pod-based structure)",
+    "physical_scale": "Total 20 Switches serving 20 * 8 Servers.",
+    "bandwidth_policy": "Strict Oversubscription (2:1). Traffic moving upward (to Core) faces 50 percent bandwidth reduction.",
+    "critical_rule": "Cross-Pod traffic is EXPENSIVE (congested). Intra-Pod traffic is CHEAP (fast)."
+  },
+  "evaluation_scenarios": [
+    {
+      "scenario_narrative": {
+        "workload_description": "5 Concurrent DML Jobs (Moderate Load)",
+        "acceleration_resource_budget": "Allowed to deploy INA on 5 switches (approx 25.0% of all switches).",
+        "job_spatial_distribution": [
+          "Job 0 (Size: 282MB): All workers inside Pod 3.",
+          "Job 1 (Size: 39MB): Spread across 2 Pods [0, 1].",
+          "Job 2 (Size: 106MB): All workers inside Pod 0.",
+          "Job 3 (Size: 722MB): Spread across 2 Pods [2, 3].",
+          "Job 4 (Size: 632MB): Spread across 2 Pods [1, 2]."
+        ]
+      },
+      "performance_outcome": {
+        "iteration_makespan": "56.40 seconds",
+        "contrast_algorithm_makespan": "29.46 seconds",
+        "diagnosis": "Poor - Optimization Needed"
+      },
+      "critical_issues_found": [
+        {
+          "location": "PS Access Bottleneck (Last Mile Congestion)",
+          "specific_link": "ToR(162) --> Server(49)",
+          "severity": "CRITICAL SATURATION (100 percent Full)"
+        },
+        {
+          "location": "Core Layer Bottleneck (Cross-Pod Congestion)",
+          "specific_link": "Core(176) --> Aggr(174)",
+          "severity": "CRITICAL SATURATION (100 percent Full)"
+        },
+        {
+          "location": "PS Access Bottleneck (Last Mile Congestion)",
+          "specific_link": "ToR(160) --> Server(6)",
+          "severity": "CRITICAL SATURATION (100 percent Full)"
+        },
+        {
+          "location": "PS Access Bottleneck (Last Mile Congestion)",
+          "specific_link": "ToR(167) --> Server(148)",
+          "severity": "CRITICAL SATURATION (100 percent Full)"
+        }
+      ],
+      "resource_utilization_report": [
+        {
+          "switch": "ToR(164)",
+          "status": "Active",
+          "utilization": "27.7%"
+        },
+        {
+          "switch": "ToR(165)",
+          "status": "Active",
+          "utilization": "34.1%"
+        },
+        {
+          "switch": "Aggr(172)",
+          "status": "WASTED BUDGET",
+          "observation": "INA feature enabled (costing budget) but processing ZERO traffic."
+        },
+        {
+          "switch": "Aggr(173)",
+          "status": "WASTED BUDGET",
+          "observation": "INA feature enabled (costing budget) but processing ZERO traffic."
+        },
+        {
+          "switch": "Core(176)",
+          "status": "Active",
+          "utilization": "38.1%"
+        },
+        {
+          "ps_node": "Server(6)",
+          "status": "Active",
+          "total_workers": 17,
+          "load": "100.00 Gbps",
+          "details": "[Job 2: 17 workers]"
+        },
+        {
+          "ps_node": "Server(49)",
+          "status": "Active",
+          "total_workers": 19,
+          "load": "99.31 Gbps",
+          "details": "[Job 1: 19 workers]"
+        },
+        {
+          "ps_node": "Server(148)",
+          "status": "Active",
+          "total_workers": 19,
+          "load": "95.00 Gbps",
+          "details": "[Job 0: 19 workers]"
+        },
+        {
+          "ps_node": "Server(91)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        },
+        {
+          "ps_node": "Server(95)",
+          "status": "IDLE",
+          "observation": "PS has no aggregated workers."
+        }
+      ]
+    }
+  ],
+  "hardware_capability": {
+    "switch_processing_power": "750.0 Gbps (Standard Programmable Switch)"
+  }
+}

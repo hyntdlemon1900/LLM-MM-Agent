@@ -2,7 +2,8 @@
 from __future__ import annotations
 from typing import Dict, List, Any, Type, Tuple, Optional
 from collections import defaultdict
-
+import traceback
+from func_timeout import func_timeout, FunctionTimedOut
 from .topo import FatTree, SpineLeaf
 from .dataset import generate_dataset_job
 
@@ -12,6 +13,7 @@ class SolverEvaluation:
     def __init__(
         self,
         solver_class: Type,
+        time_limit: int = 300,
     ):
         """
         初始化评估器
@@ -49,13 +51,13 @@ class SolverEvaluation:
         if self.topo_name == 'SpineLeaf':
             self.network = SpineLeaf(self.tops_num, self.tors_num, self.basic_band, self.hosts_num, 'fixed', self.k1)
         self.solver_class = solver_class
+        self.time_limit = time_limit
         
 
     def evaluate(self) -> Tuple[bool, str]:
         self.ina_num_list = [5]
         self.jobs_num_list = [5]
         self.Cs_list = [750.0]
-        self.Ps = 200.0
         self.instance_num = 1
         
         overall_success = True
@@ -75,17 +77,23 @@ class SolverEvaluation:
                             ina_budget= ina_budget,
                             jobs_num = jobs_num,
                             Cs = Cs,
-                            Ps = self.Ps,
+                            base_bw = self.basic_band,
                             topo_name = self.topo_name
                         )
                         
-                        # 初始化result
-                        # result = {
-                        #     'solver': None,
-                        #     'anwser': None,
-                        # }
-                        answer = solver.solve()
-                        is_feasible, errors = solver.check_feasibility()
+                        try:
+                            # Limit execution time to the specified time limit
+                            func_timeout(self.time_limit, solver.solve)
+                            # 从这里返回feasibility failure
+                            is_feasible, errors = solver.check_feasibility()
+                        except FunctionTimedOut:
+                            is_feasible = False
+                            errors = {"Timeout Error": [f"Solver execution timed out after {self.time_limit}s."]}
+                        except Exception as e:
+                            is_feasible = False
+                            # 这里可能是runtime error或者feasibility failure
+                            errors = {"Runtime Error": [traceback.format_exc()]}
+
                         total_checks += 1
                         
                         if not is_feasible:
@@ -95,16 +103,12 @@ class SolverEvaluation:
                                 for msg in msgs:
                                     if msg not in aggregated_errors[cat]:
                                         aggregated_errors[cat].append(msg)
-                        
-                        # result['solver'] = solver
-                        # result['anwser'] = answer
-                        # results.append(result) 
-        
+
         if overall_success:
              return True, f"All {total_checks} instances passed feasibility check."
         else:
              # Format string
-             final_msg_lines = [f"Feasibility Failed in {total_checks} checks."]
+             final_msg_lines = [f"Failed in {total_checks} checks."]
              for cat, msgs in aggregated_errors.items():
                  final_msg_lines.append(f"[{cat}]: {len(msgs)} unique issues.")
                  # Show top 3 unique errors
@@ -112,5 +116,5 @@ class SolverEvaluation:
                      final_msg_lines.append(f"    - {m}")
                  if len(msgs) > 3:
                      final_msg_lines.append(f"    - ... and {len(msgs)-3} more similar errors.")
-             
+             print("\n".join(final_msg_lines))
              return False, "\n".join(final_msg_lines)

@@ -2,8 +2,13 @@ import json
 from typing import Dict
 import os
 import yaml
-from datetime import datetime
-
+import ast
+import re
+import textwrap
+import importlib.util
+from pathlib import Path
+from typing import Type
+import inspect
 
 def read_text_file(file_path: str) -> str:
     with open(file_path, 'r', encoding='utf-8') as file:
@@ -324,3 +329,85 @@ def replace_function_in_code(original_code: str, function_name: str, new_functio
     formatted_code = format_function_code_with_indent(new_function_code, indent_prefix)
     new_lines = lines[:start_line] + formatted_code.split('\n') + lines[end_line:]
     return '\n'.join(new_lines)
+
+def integrate_functions_directly(
+    template_code: str,
+    function_specs: list,
+    function_codes: dict
+) -> str:
+    """
+    直接将启发式函数集成到 ModelSolver 模板中（不使用 LLM）
+    
+    集成策略：
+    1. 提取模板中的 import 语句和类定义部分
+    2. 将生成的函数作为类的方法插入到类定义中
+    3. 在 solve() 方法中按依赖顺序依次调用这些函数
+    4. 返回最终的 best_solution
+    
+    Args:
+        template_code: ModelSolver 模板代码
+        function_specs: 函数规范列表（来自架构设计）
+        function_codes: 函数代码字典 {index: code_string}
+    
+    Returns:
+        完整的 ModelSolver 代码字符串
+    """
+    # 先保留模板原样
+    new_code_lines = [template_code.rstrip(), ""]
+    
+    # 4. 添加生成的启发式函数作为类方法
+    new_code_lines.append('    # ============ Heuristic Functions ============')
+    new_code_lines.append('')
+    
+    for i, func_spec in enumerate(function_specs):
+        func_name = func_spec['name']
+        func_code = function_codes.get(func_name, f"# Function {func_spec['name']} not generated")
+        
+        new_code_lines.append(f"    # Function {i+1}: {func_name}")
+        new_code_lines.append(f"    # Role: {func_spec['strategic_role']}")
+        
+        # 处理函数代码的缩进（添加一级缩进使其成为类方法）
+        func_lines = func_code.split('\n')
+        for func_line in func_lines:
+            if func_line.strip():
+                new_code_lines.append('    ' + func_line)
+            else:
+                new_code_lines.append('')
+        
+        new_code_lines.append('')
+
+    return '\n'.join(new_code_lines)
+
+# ============ 代码修复辅助工具 ============
+# tools for dynamic loading and evaluation                    
+def load_solver_class_from_file(file_path: str, class_name: str = "ModelSolver") -> Type:
+    file_path = Path(file_path).resolve()
+    
+    if not file_path.exists():
+        raise FileNotFoundError(f"Solver 文件不存在: {file_path}")
+    
+    # 动态加载模块
+    spec = importlib.util.spec_from_file_location("dynamic_solver_module", file_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    solver_class = getattr(module, class_name, None)
+    if solver_class is None:
+        raise AttributeError(f"模块中不存在类 '{class_name}': {file_path}")
+
+    return solver_class
+
+def extract_method_source_from_class(solver_class, method_name: str):
+    """Extract method source using inspect for precise function repair."""
+    if not solver_class or not hasattr(solver_class, method_name):
+        return None, -1, -1
+    try:
+        method_obj = getattr(solver_class, method_name)
+        source_lines, start_line = inspect.getsourcelines(method_obj)
+    except (OSError, TypeError, AttributeError) as exc:
+        print(f"[Code Fix] Warning: Unable to inspect {method_name}: {exc}")
+        return None, -1, -1
+    code = ''.join(source_lines)
+    start_idx = max(start_line - 1, 0)
+    end_idx = start_idx + len(source_lines)
+    return code, start_idx, end_idx

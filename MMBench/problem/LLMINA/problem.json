@@ -12,7 +12,7 @@
       "d_j": "The fixed Parameter Server (PS) node designated for job j.",
       "m_j": "Gradient data volume per iteration for job j (e.g., in Gigabits).",
       "B_INA": "Maximum budget for INA-enabled switches (Cardinality constraint).",
-      "C_e^bw": "Bandwidth capacity of physical link e (Gbps).",
+      "C_e^bw": "Bandwidth of physical link e (Gbps).",
       "C_s": "Maximum processing throughput of switch s (Gbps) when INA is enabled.",
       "I_{u->v}(e)": "Binary parameter (Pre-calculated): 1 if link e is on the shortest path from node u to node v, 0 otherwise.",
       "M": "Big-M constant: A sufficiently large number used to linearly model conditional constraints (e.g., if y=0, then rate=0)."
@@ -77,12 +77,12 @@
         "meaning": "If switch s is used by job j, the rate from s to PS must support the job's effective rate gamma_j. (Simplified flow conservation for aggregated traffic)."
       },
       {
-        "name": "Switch Processing Capacity",
+        "name": "Switch Processing Throughput",
         "expression": "sum(j in J) sum(w in W_j) gamma_{jws} <= C_s * x_s,  forall s in S",
         "meaning": "The total volume of gradients arriving at switch s from all workers of all jobs must not exceed the switch's processing throughput C_s."
       },
       {
-        "name": "Physical Link Capacity",
+        "name": "Physical Link Bandwidth",
         "expression": "Load_e(Worker->Switch) + Load_e(Worker->PS) + Load_e(Switch->PS) <= C_e^bw,  forall e",
         "meaning": "The sum of all traffic types traversing link e must not exceed the link's physical bandwidth. Loads are calculated by summing rates gamma where I_{u->v}(e) = 1."
       }
